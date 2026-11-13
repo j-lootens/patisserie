@@ -68,6 +68,11 @@
 - **FR-26.** Under "On Disk Now", the view must list `SYSTEM.md`, `APPEND_SYSTEM.md`, prompt templates, extensions and MCP config for the session's working directory. These are not recorded in the session, so the view must say they may have changed since it ran.
 - **FR-27.** The view must update when the session file changes.
 
+## Beach
+
+- **FR-39.** The extension must show a Beach view in the bottom panel: an ASCII beach animation, unrelated to Pi sessions. It must pause while the panel is hidden or collapsed.
+- **FR-40.** The commands "Open Beach" and "Close Beach", and a close button in the Beach view's title bar, must show and hide the view. A closed Beach view is removed from the panel, so its animation stops. The extension must remember the choice across restarts.
+
 ## Pi session storage
 
 Checked against Pi 1.5.2 (`@earendil-works/pi-coding-agent`) and its [session format docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/session-format.md).

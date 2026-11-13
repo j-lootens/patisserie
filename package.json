@@ -2,7 +2,7 @@
   "name": "patisserie",
   "displayName": "Patisserie",
   "description": "Manage Pi sessions",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "publisher": "j-lootens",
   "repository": {
     "type": "git",
@@ -14,7 +14,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -48,7 +50,8 @@
         {
           "type": "webview",
           "id": "patisserie.beach",
-          "name": "Beach"
+          "name": "Beach",
+          "when": "patisserie.beachVisible"
         }
       ]
     },
@@ -103,6 +106,17 @@
         "title": "Rename Session…",
         "icon": "$(edit)",
         "category": "Pi"
+      },
+      {
+        "command": "patisserie.openBeach",
+        "title": "Open Beach",
+        "category": "Pi"
+      },
+      {
+        "command": "patisserie.closeBeach",
+        "title": "Close Beach",
+        "icon": "$(close)",
+        "category": "Pi"
       }
     ],
     "menus": {
@@ -120,6 +134,11 @@
         {
           "command": "patisserie.refresh",
           "when": "view == patisserie.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "patisserie.closeBeach",
+          "when": "view == patisserie.beach",
           "group": "navigation"
         }
       ],
@@ -139,6 +158,14 @@
         {
           "command": "patisserie.renameSession",
           "when": "false"
+        },
+        {
+          "command": "patisserie.openBeach",
+          "when": "!patisserie.beachVisible"
+        },
+        {
+          "command": "patisserie.closeBeach",
+          "when": "patisserie.beachVisible"
         }
       ],
       "view/item/context": [

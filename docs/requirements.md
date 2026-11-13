@@ -36,7 +36,7 @@
 Checked against Pi 1.5.2 (`@earendil-works/pi-coding-agent`) and its [session format docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/session-format.md).
 
 - **Directory.** Pi stores sessions in `~/.pi/agent/sessions/--<encoded-cwd>--/`. To get `<encoded-cwd>`, remove the leading `/` or `\` from the working directory, then replace each `/`, `\`, and `:` with `-`. Example: `/Users/me/patisserie` becomes `--Users-me-patisserie--`.
-- **Directory override.** `PI_CODING_AGENT_SESSION_DIR`, the `sessionDir` Pi setting, and the `--session-dir` CLI flag change the directory. `--session-dir` has the highest priority.
+- **Directory override.** `PI_CODING_AGENT_SESSION_DIR`, the `sessionDir` Pi setting, and the `--session-dir` CLI flag change the directory. `--session-dir` has the highest priority, then the environment variable, then the setting. Pi uses a custom directory as-is, without the `--<encoded-cwd>--` subfolder, so it can hold sessions from many working directories. Pi then keeps only the sessions whose header `cwd` matches. The extension reads the environment variable and the user-level `sessionDir` in `~/.pi/agent/settings.json` (or `$PI_CODING_AGENT_DIR/settings.json`). It does not read a project-level `.pi/settings.json`.
 - **File name.** `<timestamp>_<session-id>.jsonl`. The timestamp is ISO 8601 with `:` and `.` replaced by `-`. The session ID is a UUID by default.
 - **Header.** The first line is `{"type":"session","version":3,"id":…,"timestamp":…,"cwd":…}`. `timestamp` is ISO 8601. Use it as the start time (FR-3).
 - **Session name.** A `session_info` entry with a `name` field. If there are many, the last one applies. If there is none, show the session ID.

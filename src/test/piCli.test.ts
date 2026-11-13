@@ -44,7 +44,7 @@ suite('piCli', () => {
 
 	test('findPiOnPath tries PATHEXT on win32 with ; delimiter', async () => {
 		await fs.rm(fakePi);
-		const cmd = path.join(dir, 'pi.cmd');
+		const cmd = path.join(dir, 'pi.CMD');
 		await fs.writeFile(cmd, 'x');
 		await fs.chmod(cmd, 0o755);
 		assert.strictEqual(await findPiOnPath(dir, '.EXE;.CMD', 'win32', ';'), cmd);

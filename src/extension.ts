@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { openSessionInTerminal } from './pi/piCli';
 import { PiSession } from './sessions/types';
+import { formatCost } from './views/format';
 import { SessionTreeProvider } from './views/sessionTreeProvider';
 
 export function activate(context: vscode.ExtensionContext) {
@@ -11,6 +12,9 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		provider,
 		treeView,
+		provider.onDidLoad(({ totalCost }) => {
+			treeView.description = `Total: ${formatCost(totalCost)}`;
+		}),
 		vscode.commands.registerCommand('patisserie.refresh', () => provider.refresh()),
 		vscode.commands.registerCommand('patisserie.openSession', (session: PiSession) => {
 			if (workspaceRoot) {

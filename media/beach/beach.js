@@ -25,6 +25,8 @@ let wet, wetBefore, dryRate, seeded, drawn, front, prevFront, drag, shells, risi
 let waves, newest, last = performance.now();
 // Each live wave with its front per column for the current frame: { w, ys, breaking, avg }.
 let waveFronts = [];
+// A crab that now and then scuttles across the sand: { x, y, dir, speed, washed }.
+let crab = null;
 // The sea lies above the top edge: waves come in from there and drain back out of view.
 const offshore = () => -rows * 0.15;
 
@@ -55,6 +57,7 @@ function reset() {
 	newest = newWave(performance.now());
 	waves = [newest];
 	waveFronts = [];
+	crab = null;
 }
 
 /**
@@ -222,6 +225,145 @@ function step(t, dt) {
 		}
 	}
 	dry(dt);
+	moveCrab(dt);
+}
+
+/** Seconds between crabs, on average. */
+const CRAB_EVERY_S = 120;
+// The crab, in characters; spaces let the sand show through. It is symmetric
+// around its middle column.
+const CRAB = [
+	'(| |)     (| |)',
+	'  \\/_______\\/  ',
+	'  <##°###°##>  ',
+	'   ###>-<###   ',
+	'  ( (     ) )  ',
+];
+// The left claw, open and snapped shut; the right claw is its mirror image.
+const CLAW_OPEN = ['(| |)', '  \\/'];
+// Shut, the outer pincer closes onto the inner one, which stays put.
+const CLAW_SHUT = [' (||)', '  \\/'];
+const MIRROR = { '\\': '/', '/': '\\', '(': ')', ')': '(' };
+
+/** Draws a left-claw shape and its mirror image onto the crab's rows. */
+function drawClaws(rows, claw, blank) {
+	const last = rows[0].length - 1;
+	claw.forEach((part, r) => [...part].forEach((ch, c) => {
+		if (ch !== ' ') {
+			rows[r][c] = blank ? ' ' : ch;
+			rows[r][last - c] = blank ? ' ' : (MIRROR[ch] ?? ch);
+		}
+	}));
+}
+// The legs: left ones in the row's left half, right ones in its right half.
+const LEGS_ROW = CRAB.length - 1;
+
+/**
+ * The crab in step `phase` with its claws open or shut. The sides take turns:
+ * in step 1 the left legs reach out while the right legs rest, in step -1 the
+ * right legs reach out while the left legs rest.
+ */
+function crabPose(phase, shut) {
+	const rows = CRAB.map(row => [...row]);
+	if (shut) {
+		// Clear the open claws, then draw the shut ones; nothing else is touched.
+		drawClaws(rows, CLAW_OPEN, true);
+		drawClaws(rows, CLAW_SHUT, false);
+	}
+	const legs = rows[LEGS_ROW];
+	const centre = legs.length / 2;
+	const stepped = legs.map(() => ' ');
+	legs.forEach((ch, c) => {
+		if (ch !== ' ') {
+			const outward = c < centre ? -1 : 1;
+			stepped[c + (outward === -phase ? outward : 0)] = ch;
+		}
+	});
+	rows[LEGS_ROW] = stepped;
+	return rows;
+}
+
+/** Turns a pose into rows of characters, undefined where the sand shows through. */
+function toSprite(rows) {
+	return rows.map(row => row.map(ch => (ch === ' ' ? undefined : ch)));
+}
+
+/** The crab upside down: rows reversed, slanted characters flipped. */
+function upsideDown(rows) {
+	const flip = { '\\': '/', '/': '\\', '_': '‾' };
+	return [...rows].reverse().map(row => row.map(ch => flip[ch] ?? ch));
+}
+
+// Walking, the legs step in turn: CRAB_WALK[step][claws shut].
+const CRAB_WALK = [1, -1].map(phase => [false, true].map(shut => toSprite(crabPose(phase, shut))));
+// Washed away, the crab tumbles: upright, then upside down.
+const CRAB_TUMBLE = [toSprite(crabPose(0, false)), toSprite(upsideDown(crabPose(0, false)))];
+const CRAB_W = CRAB[0].length;
+const CRAB_H = CRAB.length;
+
+/** Starts a crab at one side of the beach, on the sand, walking to the other side. */
+function spawnCrab() {
+	const dir = Math.random() < 0.5 ? 1 : -1;
+	crab = {
+		x: dir > 0 ? -CRAB_W : cols,
+		y: Math.floor(Math.max(0, rows - CRAB_H) * (0.5 + Math.random() * 0.5)),
+		dir,
+		speed: 4 + Math.random() * 4,
+		washed: false,
+		age: 0,
+	};
+}
+
+/** Crabs walk sideways and now and then pause; water that reaches one sweeps it out to sea. */
+function moveCrab(dt) {
+	if (!crab) {
+		if (Math.random() < dt / CRAB_EVERY_S) {
+			spawnCrab();
+		}
+		return;
+	}
+	crab.age += dt;
+	if (crab.washed) {
+		crab.y -= 9 * dt;
+		crab.x += Math.sin(crab.age * 3) * 4 * dt;
+		if (crab.y < -CRAB_H) {
+			crab = null;
+		}
+		return;
+	}
+	// Short pauses, as if checking for danger.
+	if (Math.sin(crab.age * 1.3) < 0.85) {
+		crab.x += crab.dir * crab.speed * dt;
+	}
+	const left = Math.round(crab.x);
+	for (let k = 0; k < CRAB_W; k++) {
+		const x = left + k;
+		// Washed away once water reaches any part of it.
+		if (x >= 0 && x < cols && crab.y < front[x]) {
+			crab.washed = true;
+			crab.age = 0;
+			return;
+		}
+	}
+	if (crab.x > cols || crab.x < -CRAB_W) {
+		crab = null;
+	}
+}
+
+/** The crab's character at a cell, or undefined where it doesn't cover the cell. */
+function crabAt(x, y) {
+	if (!crab) {
+		return undefined;
+	}
+	const r = y - Math.round(crab.y), c = x - Math.round(crab.x);
+	if (r < 0 || r >= CRAB_H || c < 0 || c >= CRAB_W) {
+		return undefined;
+	}
+	const sprite = crab.washed
+		? CRAB_TUMBLE[Math.floor(crab.age * 4) % CRAB_TUMBLE.length]
+		// Legs step with the distance walked; claws snap open and shut with time.
+		: CRAB_WALK[Math.floor(crab.x / 2) & 1][Math.floor(crab.age * 4) & 1];
+	return sprite[r][c];
 }
 
 /** Thickness of a wave's foam band at column x: lumpy along the front, fat while breaking. */
@@ -312,6 +454,7 @@ function render(t) {
 			const i = y * cols + x;
 			const g = grain(x, y);
 			let cls, ch;
+			const crabCh = crabAt(x, y);
 			// The foam band of any wave that covers this cell; a breaking wave wins.
 			let foam;
 			for (const f of fronts[x]) {
@@ -390,6 +533,10 @@ function render(t) {
 				cls = !tint ? (level ? 'w' + level : 'sand') : level ? tint + ' b' + level : tint;
 				ch = g2 > 97 ? DEBRIS[g % DEBRIS.length]
 					: w > 0.66 ? (g % 5 ? ':' : '.') : g % 7 ? '.' : ',';
+			}
+			if (crabCh) {
+				cls = 'crab';
+				ch = crabCh;
 			}
 			line += '<span class="' + cls + '">' + ch + '</span>';
 		}

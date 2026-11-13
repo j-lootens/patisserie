@@ -2,7 +2,7 @@
   "name": "patisserie",
   "displayName": "Patisserie",
   "description": "Manage Pi sessions",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "j-lootens",
   "repository": {
     "type": "git",
@@ -50,6 +50,24 @@
     ],
     "commands": [
       {
+        "command": "patisserie.continueSession",
+        "title": "Continue Latest Session",
+        "icon": "$(play)",
+        "category": "Pi"
+      },
+      {
+        "command": "patisserie.newSession",
+        "title": "New Named Session",
+        "icon": "$(add)",
+        "category": "Pi"
+      },
+      {
+        "command": "patisserie.forkSession",
+        "title": "Fork Session in Terminal",
+        "icon": "$(git-branch)",
+        "category": "Pi"
+      },
+      {
         "command": "patisserie.refresh",
         "title": "Refresh",
         "icon": "$(refresh)",
@@ -76,12 +94,26 @@
     "menus": {
       "view/title": [
         {
+          "command": "patisserie.newSession",
+          "when": "view == patisserie.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "patisserie.continueSession",
+          "when": "view == patisserie.sessions",
+          "group": "navigation@2"
+        },
+        {
           "command": "patisserie.refresh",
           "when": "view == patisserie.sessions",
           "group": "navigation"
         }
       ],
       "commandPalette": [
+        {
+          "command": "patisserie.forkSession",
+          "when": "false"
+        },
         {
           "command": "patisserie.openSession",
           "when": "false"
@@ -96,6 +128,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "patisserie.forkSession",
+          "when": "view == patisserie.sessions && viewItem == session",
+          "group": "navigation"
+        },
         {
           "command": "patisserie.showContext",
           "when": "view == patisserie.sessions && viewItem == session",
@@ -138,7 +175,8 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
-    "package": "vsce package"
+    "package": "vsce package",
+    "install-local": "sh scripts/install.sh"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

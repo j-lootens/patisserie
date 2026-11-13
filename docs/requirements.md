@@ -36,6 +36,15 @@
 - **FR-28.** The user must be able to rename a session from the session's context menu or with F2 in the session list. The extension must ask for the new name, prefilled with the current name, and store it with Pi's RPC command `set_session_name` (`pi --mode rpc --session <file>`). If Pi fails or doesn't answer within 15 seconds, the extension must show an error.
 - **FR-29.** Renaming must not change the session's last activity time. Entries that only change settings (`session_info`, `label`, `thinking_level_change`, `model_change`) don't count as activity.
 
+## Session status
+
+- **FR-30.** The session list must show the status of each session with an icon, a label and a tooltip line:
+  - **Working**: the last message leaves the turn to the agent (a user message, a tool result, or an assistant message with `stopReason: "toolUse"`), and the session file changed in the last 5 minutes.
+  - **Waiting for input**: the agent finished its turn, and the extension has an open terminal for the session or the session changed in the last 15 minutes.
+  - **Inactive**: all other sessions, including an agent turn with no change for 5 minutes (Pi stopped or crashed).
+- **FR-31.** Pi doesn't keep the session file open, so the extension can't match a running Pi process to its session. It must treat a session that it opened in a terminal as live until the terminal closes. Clicking a session with an open terminal must show that terminal instead of starting Pi again.
+- **FR-32.** The list must recompute statuses every 30 seconds, so they change with time even when no file changes.
+
 ## Context view
 
 - **FR-20.** The extension must show a Context view below the session list. When the user selects a session, or chooses "Show Context" on it, the view must show what that session used.

@@ -2,7 +2,7 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { encodeCwd, getSessionDir, listSessions, parseSessionFile } from '../sessions/sessionStore';
+import { WAITING_RECENT_MS, WORKING_STALE_MS, encodeCwd, getSessionDir, listSessions, parseSessionFile, sessionStatus } from '../sessions/sessionStore';
 
 const ENV_KEYS = ['PI_CODING_AGENT_SESSION_DIR', 'PI_CODING_AGENT_DIR'] as const;
 
@@ -161,5 +161,48 @@ suite('sessionStore', () => {
 			await fs.writeFile(path.join(dir, 'b.jsonl'), jsonl(header('other', '2026-01-02T00:00:00.000Z', '/elsewhere')));
 			assert.deepStrictEqual((await listSessions('/ws')).map((s) => s.id), ['mine']);
 		});
+	});
+});
+
+suite('sessionStatus', () => {
+	let tmp: string;
+
+	setup(async () => {
+		tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'patisserie-status-'));
+	});
+
+	teardown(async () => {
+		await fs.rm(tmp, { recursive: true, force: true });
+	});
+
+	async function parseLast(message: object) {
+		const file = path.join(tmp, 's.jsonl');
+		await fs.writeFile(file, jsonl(
+			header('s', '2026-11-01T10:00:00.000Z'),
+			{ type: 'message', timestamp: '2026-11-01T10:00:01.000Z', message: { role: 'user', content: 'hi' } },
+			{ type: 'message', timestamp: '2026-11-01T10:00:02.000Z', message },
+			{ type: 'session_info', timestamp: '2026-11-01T10:00:03.000Z', name: 'renamed' },
+		));
+		const session = await parseSessionFile(file);
+		assert.ok(session);
+		return session;
+	}
+
+	test('agent turn: tool calls and tool results, but not a finished answer', async () => {
+		assert.strictEqual((await parseLast({ role: 'assistant', stopReason: 'toolUse' })).agentTurn, true);
+		assert.strictEqual((await parseLast({ role: 'toolResult' })).agentTurn, true);
+		assert.strictEqual((await parseLast({ role: 'assistant', stopReason: 'stop' })).agentTurn, false);
+	});
+
+	test('working, waiting and inactive by age and open terminal', async () => {
+		const busy = await parseLast({ role: 'toolResult' });
+		const done = await parseLast({ role: 'assistant', stopReason: 'stop' });
+		const t = busy.lastActivity.getTime();
+		assert.strictEqual(sessionStatus(busy, t + 1000), 'working');
+		assert.strictEqual(sessionStatus(busy, t + WORKING_STALE_MS + 1), 'inactive');
+		assert.strictEqual(sessionStatus(busy, t + WORKING_STALE_MS + 1, true), 'waiting');
+		assert.strictEqual(sessionStatus(done, t + 1000), 'waiting');
+		assert.strictEqual(sessionStatus(done, t + WAITING_RECENT_MS + 1), 'inactive');
+		assert.strictEqual(sessionStatus(done, t + WAITING_RECENT_MS + 1, true), 'waiting');
 	});
 });

@@ -59,13 +59,13 @@ When the user selects a session, a detail view shows what the agent saw and used
 | Fork a session into a new one. | Claude Code fork, Pi `--fork` | `pi --fork <id>` |
 | Rename a session. | Claude Code, Pi `/name` | Pi owns the file, so this needs Pi's RPC or SDK. It conflicts with FR-19 unless Pi does the write. |
 | Reveal the session file in Finder, or copy its ID or path. | — | Commands |
-| Bring an already open terminal for a session to the front instead of opening a second one. | — | Track terminals |
+| Bring an already open terminal for a session to the front instead of opening a second one. Built (FR-31). | — | Track terminals |
 
 ## 4. Live integration
 
 | Idea | Seen in | How |
 |---|---|---|
-| Show running sessions (a live dot) and the current one. | Claude Code, Copilot chat sessions | Watch file `mtime`, or use RPC mode |
+| Show running sessions (a live dot) and the current one. Built, see FR-30 to FR-32. | Claude Code, Copilot chat sessions | Watch file `mtime`, or use RPC mode |
 | Changed-files view with diffs for each session or turn, opened in VS Code's diff editor. | Cline checkpoints "Compare", Claude Code | Edit and write tool calls; git |
 | Checkpoints: restore files to a turn. | Cline (shadow git repo), Claude Code `/rewind` | Needs Pi support or our own snapshots. Large effort. |
 | Show context window usage live in the status bar. | Cline, Kilo | RPC `--mode rpc` events |

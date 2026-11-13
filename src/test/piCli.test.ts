@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { findPiOnPath, openSessionInTerminal, resolvePiPath, sendRpcCommand } from '../pi/piCli';
+import { continueLatestSession, findPiOnPath, forkSession, openSessionInTerminal, resolvePiPath, sendRpcCommand } from '../pi/piCli';
 
 suite('piCli', () => {
 	let dir: string;
@@ -81,6 +81,29 @@ suite('piCli', () => {
 			assert.ok(created.some(t => t.name === 'Pi: My session'));
 		} finally {
 			created.forEach(t => t.dispose());
+		}
+	});
+
+	test('continue and fork launch Pi with separate arguments in the workspace', async () => {
+		await config().update('piPath', fakePi, vscode.ConfigurationTarget.Global);
+		const before = new Set(vscode.window.terminals);
+		const root = vscode.Uri.file(dir);
+		try {
+			await continueLatestSession(root);
+			await forkSession({
+				id: 'fork-source', name: 'Source', filePath: '/tmp/source.jsonl',
+				startTime: new Date(), lastActivity: new Date(),
+			}, root);
+			const created = vscode.window.terminals.filter(t => !before.has(t));
+			assert.strictEqual(created.length, 2);
+			for (const [index, args] of [['--continue'], ['--fork', 'fork-source']].entries()) {
+				const options = created[index]!.creationOptions as vscode.TerminalOptions;
+				assert.deepStrictEqual(options.shellArgs, args);
+				assert.strictEqual(options.shellPath, fakePi);
+				assert.strictEqual((options.cwd as vscode.Uri).fsPath, dir);
+			}
+		} finally {
+			vscode.window.terminals.filter(t => !before.has(t)).forEach(t => t.dispose());
 		}
 	});
 

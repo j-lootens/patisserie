@@ -75,20 +75,46 @@ async function showPiNotFound(): Promise<void> {
 	}
 }
 
-/** Opens a terminal in `workspaceRoot` that resumes `session` (FR-12 to FR-15, FR-18). */
-export async function openSessionInTerminal(session: PiSession, workspaceRoot: vscode.Uri): Promise<void> {
+/** Starts Pi directly, keeping user input out of shell command parsing. */
+async function launchTerminal(workspaceRoot: vscode.Uri, name: string, args: string[]): Promise<vscode.Terminal | undefined> {
 	const piPath = await resolvePiPath();
 	if (piPath === undefined) {
 		await showPiNotFound();
-		return;
+		return undefined;
 	}
 	const terminal = vscode.window.createTerminal({
-		name: `Pi: ${session.name ?? session.id}`,
+		name,
 		cwd: workspaceRoot,
 		shellPath: piPath,
-		shellArgs: ['--session', session.id],
+		shellArgs: args,
 	});
 	terminal.show();
+	return terminal;
+}
+
+/** Opens a terminal that resumes the selected session. */
+export function openSessionInTerminal(session: PiSession, workspaceRoot: vscode.Uri): Promise<vscode.Terminal | undefined> {
+	return launchTerminal(workspaceRoot, `Pi: ${session.name ?? session.id}`, ['--session', session.id]);
+}
+
+export function continueLatestSession(workspaceRoot: vscode.Uri): Promise<vscode.Terminal | undefined> {
+	return launchTerminal(workspaceRoot, 'Pi: Continue Latest Session', ['--continue']);
+}
+
+export async function newNamedSession(workspaceRoot: vscode.Uri): Promise<vscode.Terminal | undefined> {
+	const name = await vscode.window.showInputBox({
+		title: 'New Pi Session',
+		prompt: 'Enter a name for the new session',
+		validateInput: value => value.trim() ? undefined : 'Enter a name.',
+	});
+	if (!name?.trim()) {
+		return undefined;
+	}
+	return launchTerminal(workspaceRoot, `Pi: ${name.trim()}`, ['--name', name.trim()]);
+}
+
+export function forkSession(session: PiSession, workspaceRoot: vscode.Uri): Promise<vscode.Terminal | undefined> {
+	return launchTerminal(workspaceRoot, `Pi: Fork ${session.name ?? session.id}`, ['--fork', session.id]);
 }
 
 const RPC_TIMEOUT_MS = 15_000;

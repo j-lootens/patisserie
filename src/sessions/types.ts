@@ -12,4 +12,12 @@ export interface PiSession {
 	readonly lastActivity: Date;
 	/** Total cost in USD, or `undefined` when no entry has cost data (FR-10). */
 	readonly cost?: number;
+	/**
+	 * True when the last message leaves the turn to the agent: a user message,
+	 * a tool result, or an assistant message that stopped to call tools.
+	 */
+	readonly agentTurn?: boolean;
 }
+
+/** Live state of a session (FR-30). */
+export type SessionStatus = 'working' | 'waiting' | 'inactive';

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { openSessionInTerminal, renameSession } from './pi/piCli';
+import { continueLatestSession, forkSession, newNamedSession, openSessionInTerminal, renameSession } from './pi/piCli';
 import { PiSession } from './sessions/types';
 import { ContextTreeProvider, TEXT_SCHEME, TextDocumentProvider } from './views/contextTreeProvider';
 import { formatCost } from './views/format';
@@ -35,9 +35,36 @@ export function activate(context: vscode.ExtensionContext) {
 		}),
 		treeView.onDidChangeSelection(e => showContext(e.selection[0])),
 		vscode.commands.registerCommand('patisserie.refresh', () => provider.refresh()),
-		vscode.commands.registerCommand('patisserie.openSession', (session: PiSession) => {
+		vscode.commands.registerCommand('patisserie.continueSession', () => {
 			if (workspaceRoot) {
-				return openSessionInTerminal(session, workspaceRoot);
+				return continueLatestSession(workspaceRoot);
+			}
+			void vscode.window.showWarningMessage('Open a workspace folder to continue a Pi session.');
+		}),
+		vscode.commands.registerCommand('patisserie.newSession', () => {
+			if (workspaceRoot) {
+				return newNamedSession(workspaceRoot);
+			}
+			void vscode.window.showWarningMessage('Open a workspace folder to start a Pi session.');
+		}),
+		vscode.commands.registerCommand('patisserie.forkSession', (session?: PiSession) => {
+			const target = session ?? treeView.selection[0];
+			if (target && workspaceRoot) {
+				return forkSession(target, workspaceRoot);
+			}
+		}),
+		vscode.commands.registerCommand('patisserie.openSession', async (session: PiSession) => {
+			// Bring an open terminal to the front instead of starting Pi twice on one session.
+			const open = provider.terminalFor(session.id);
+			if (open) {
+				open.show();
+				return;
+			}
+			if (workspaceRoot) {
+				const terminal = await openSessionInTerminal(session, workspaceRoot);
+				if (terminal) {
+					provider.trackTerminal(session.id, terminal);
+				}
 			}
 		}),
 		vscode.commands.registerCommand('patisserie.renameSession', async (session?: PiSession) => {

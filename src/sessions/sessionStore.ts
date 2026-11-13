@@ -1,7 +1,7 @@
 import { readFile, readdir } from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { PiSession } from './types';
+import { PiSession, SessionStatus } from './types';
 
 /**
  * Encodes a working directory the way Pi names its session folders,
@@ -106,6 +106,7 @@ async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd
 	let lastActivity = startTime;
 	let name: string | undefined;
 	let cost: number | undefined;
+	let agentTurn = false;
 	for (let i = 1; i < lines.length; i++) {
 		if (!lines[i].trim()) {
 			continue;
@@ -123,6 +124,11 @@ async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd
 		if (ts && ts > lastActivity && !METADATA_ENTRIES.has(entry.type as string)) {
 			lastActivity = ts;
 		}
+		if (entry.type === 'message') {
+			const msg = entry.message as { role?: unknown; stopReason?: unknown } | undefined;
+			agentTurn = msg?.role === 'user' || msg?.role === 'toolResult'
+				|| (msg?.role === 'assistant' && msg.stopReason === 'toolUse');
+		}
 		if (entry.type === 'session_info' && typeof entry.name === 'string') {
 			name = entry.name;
 		}
@@ -133,7 +139,7 @@ async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd
 		}
 	}
 	return {
-		session: { id: header.id, name, filePath, startTime, lastActivity, cost },
+		session: { id: header.id, name, filePath, startTime, lastActivity, cost, agentTurn },
 		cwd: typeof header.cwd === 'string' ? header.cwd : undefined,
 	};
 }
@@ -165,4 +171,22 @@ export async function listSessions(workspaceRoot: string): Promise<PiSession[]> 
 		.filter((p) => !custom || (p.cwd !== undefined && samePath(p.cwd, workspaceRoot)))
 		.map((p) => p.session)
 		.sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
+}
+
+/** A session whose agent turn has seen no write for this long is treated as stopped. */
+export const WORKING_STALE_MS = 5 * 60_000;
+/** A finished session without an open terminal counts as waiting for this long. */
+export const WAITING_RECENT_MS = 15 * 60_000;
+
+/**
+ * Works out the live state of a session (FR-30, FR-31). Pi doesn't keep the
+ * session file open, so this uses the last message, its age, and whether the
+ * extension has an open terminal for the session.
+ */
+export function sessionStatus(session: PiSession, now: number, hasOpenTerminal = false): SessionStatus {
+	const age = now - session.lastActivity.getTime();
+	if (session.agentTurn) {
+		return age < WORKING_STALE_MS ? 'working' : (hasOpenTerminal ? 'waiting' : 'inactive');
+	}
+	return hasOpenTerminal || age < WAITING_RECENT_MS ? 'waiting' : 'inactive';
 }

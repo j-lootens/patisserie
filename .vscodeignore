@@ -13,3 +13,4 @@ vsc-extension-quickstart.md
 docs/**
 out/test/**
 *.vsix
+scripts/

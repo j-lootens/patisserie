@@ -63,6 +63,12 @@ export async function getSessionDir(workspaceRoot: string): Promise<string> {
 	return (await resolveDir(workspaceRoot)).dir;
 }
 
+/**
+ * Entries that change session settings, not the conversation. They don't count
+ * as activity, so renaming a session doesn't move it to the top of the list.
+ */
+const METADATA_ENTRIES = new Set(['session_info', 'label', 'thinking_level_change', 'model_change']);
+
 function toDate(value: unknown): Date | undefined {
 	if (typeof value !== 'string' && typeof value !== 'number') {
 		return undefined;
@@ -114,7 +120,7 @@ async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd
 			continue;
 		}
 		const ts = toDate(entry.timestamp);
-		if (ts && ts > lastActivity) {
+		if (ts && ts > lastActivity && !METADATA_ENTRIES.has(entry.type as string)) {
 			lastActivity = ts;
 		}
 		if (entry.type === 'session_info' && typeof entry.name === 'string') {

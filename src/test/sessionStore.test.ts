@@ -73,6 +73,18 @@ suite('sessionStore', () => {
 	});
 
 	suite('parseSessionFile', () => {
+		test('renames and setting changes do not count as activity', async () => {
+			const f = path.join(tmp, 'r.jsonl');
+			await fs.writeFile(f, jsonl(
+				header('abc', '2026-01-01T10:00:00.000Z'),
+				{ type: 'message', timestamp: '2026-01-01T11:00:00.000Z', message: { role: 'user', content: 'hi' } },
+				{ type: 'thinking_level_change', timestamp: '2026-01-05T00:00:00.000Z', thinkingLevel: 'off' },
+				{ type: 'session_info', timestamp: '2026-01-05T00:00:00.000Z', name: 'Renamed' },
+			));
+			const s = await parseSessionFile(f);
+			assert.strictEqual(s?.name, 'Renamed');
+			assert.strictEqual(s?.lastActivity.toISOString(), '2026-01-01T11:00:00.000Z');
+		});
 		test('parses name, times and cost', async () => {
 			const f = path.join(tmp, 's.jsonl');
 			await fs.writeFile(f, jsonl(

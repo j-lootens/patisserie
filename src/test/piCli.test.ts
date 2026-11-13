@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { findPiOnPath, openSessionInTerminal, resolvePiPath } from '../pi/piCli';
+import { findPiOnPath, openSessionInTerminal, resolvePiPath, sendRpcCommand } from '../pi/piCli';
 
 suite('piCli', () => {
 	let dir: string;
@@ -82,5 +82,43 @@ suite('piCli', () => {
 		} finally {
 			created.forEach(t => t.dispose());
 		}
+	});
+
+	/** Writes a fake `pi` that answers one RPC command with `reply` (`ID` is replaced by the request id). */
+	async function fakeRpcPi(reply: string): Promise<string> {
+		const script = path.join(dir, 'pi-rpc');
+		await fs.writeFile(script, [
+			'#!/bin/sh',
+			'echo "$@" > "$(dirname "$0")/args.txt"',
+			'IFS= read -r line',
+			'id=$(printf %s "$line" | sed -n \'s/.*"id":"\\([^"]*\\)".*/\\1/p\')',
+			'echo \'{"type":"session_info_changed","name":"x"}\'',
+			`printf '%s\\n' '${reply}' | sed "s/ID/$id/"`,
+			'cat > /dev/null',
+		].join('\n'));
+		await fs.chmod(script, 0o755);
+		return script;
+	}
+
+	test('sendRpcCommand sends a command and returns the matching response', async () => {
+		const pi = await fakeRpcPi('{"id":"ID","type":"response","command":"set_session_name","success":true}');
+		const result = await sendRpcCommand(pi, '/s/file.jsonl', dir, { type: 'set_session_name', name: 'New' });
+		assert.deepStrictEqual(result, { success: true, error: undefined });
+		assert.strictEqual((await fs.readFile(path.join(dir, 'args.txt'), 'utf8')).trim(), '--mode rpc --session /s/file.jsonl');
+	});
+
+	test('sendRpcCommand reports failures, early exits and timeouts', async () => {
+		const failing = await fakeRpcPi('{"id":"ID","type":"response","command":"set_session_name","success":false,"error":"nope"}');
+		assert.deepStrictEqual(await sendRpcCommand(failing, 'f', dir, { type: 'x' }), { success: false, error: 'nope' });
+
+		const exiting = path.join(dir, 'pi-exit');
+		await fs.writeFile(exiting, '#!/bin/sh\necho boom >&2\nexit 3\n');
+		await fs.chmod(exiting, 0o755);
+		await assert.rejects(sendRpcCommand(exiting, 'f', dir, { type: 'x' }), /exited \(code 3\).*boom/);
+
+		const silent = path.join(dir, 'pi-silent');
+		await fs.writeFile(silent, '#!/bin/sh\nsleep 5\n');
+		await fs.chmod(silent, 0o755);
+		await assert.rejects(sendRpcCommand(silent, 'f', dir, { type: 'x' }, 200), /did not respond/);
 	});
 });

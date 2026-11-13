@@ -29,7 +29,12 @@
 - **FR-16.** The extension must find the Pi CLI on the system `PATH`.
 - **FR-17.** The user must be able to set a different path to the Pi CLI in the extension settings.
 - **FR-18.** If the extension cannot find the Pi CLI, it must show an error message with a link to the settings.
-- **FR-19.** The extension must read session data in read-only mode. It must not change or delete session files.
+- **FR-19.** The extension must read session data in read-only mode. It must not change or delete session files. Changes to a session (FR-28) must go through the Pi CLI, which writes the file.
+
+## Rename
+
+- **FR-28.** The user must be able to rename a session from the session's context menu or with F2 in the session list. The extension must ask for the new name, prefilled with the current name, and store it with Pi's RPC command `set_session_name` (`pi --mode rpc --session <file>`). If Pi fails or doesn't answer within 15 seconds, the extension must show an error.
+- **FR-29.** Renaming must not change the session's last activity time. Entries that only change settings (`session_info`, `label`, `thinking_level_change`, `model_change`) don't count as activity.
 
 ## Context view
 

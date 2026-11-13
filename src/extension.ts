@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { openSessionInTerminal } from './pi/piCli';
+import { openSessionInTerminal, renameSession } from './pi/piCli';
 import { PiSession } from './sessions/types';
 import { ContextTreeProvider, TEXT_SCHEME, TextDocumentProvider } from './views/contextTreeProvider';
 import { formatCost } from './views/format';
@@ -38,6 +38,12 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('patisserie.openSession', (session: PiSession) => {
 			if (workspaceRoot) {
 				return openSessionInTerminal(session, workspaceRoot);
+			}
+		}),
+		vscode.commands.registerCommand('patisserie.renameSession', async (session?: PiSession) => {
+			const target = session ?? treeView.selection[0];
+			if (target && workspaceRoot && await renameSession(target, workspaceRoot)) {
+				provider.refresh();
 			}
 		}),
 		vscode.commands.registerCommand('patisserie.showContext', async (session: PiSession) => {

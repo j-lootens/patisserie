@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -62,18 +63,23 @@ export async function resolvePiPath(): Promise<string | undefined> {
 	return findPiOnPath(process.env.PATH, process.env.PATHEXT, process.platform);
 }
 
+/** Shows the "Pi CLI not found" error with a link to the setting (FR-18). */
+async function showPiNotFound(): Promise<void> {
+	const openSettings = 'Open Settings';
+	const choice = await vscode.window.showErrorMessage(
+		'Pi CLI was not found. Install it or set the path in the settings.',
+		openSettings,
+	);
+	if (choice === openSettings) {
+		await vscode.commands.executeCommand('workbench.action.openSettings', 'patisserie.piPath');
+	}
+}
+
 /** Opens a terminal in `workspaceRoot` that resumes `session` (FR-12 to FR-15, FR-18). */
 export async function openSessionInTerminal(session: PiSession, workspaceRoot: vscode.Uri): Promise<void> {
 	const piPath = await resolvePiPath();
 	if (piPath === undefined) {
-		const openSettings = 'Open Settings';
-		const choice = await vscode.window.showErrorMessage(
-			'Pi CLI was not found. Install it or set the path in the settings.',
-			openSettings,
-		);
-		if (choice === openSettings) {
-			await vscode.commands.executeCommand('workbench.action.openSettings', 'patisserie.piPath');
-		}
+		await showPiNotFound();
 		return;
 	}
 	const terminal = vscode.window.createTerminal({
@@ -83,4 +89,110 @@ export async function openSessionInTerminal(session: PiSession, workspaceRoot: v
 		shellArgs: ['--session', session.id],
 	});
 	terminal.show();
+}
+
+const RPC_TIMEOUT_MS = 15_000;
+
+/**
+ * Sends one command to `pi --mode rpc` for `sessionFile` and resolves with the
+ * matching response. Pi writes the session file; the extension does not (FR-19).
+ */
+export function sendRpcCommand(
+	piPath: string,
+	sessionFile: string,
+	cwd: string,
+	command: Record<string, unknown>,
+	timeoutMs = RPC_TIMEOUT_MS,
+): Promise<{ success: boolean; error?: string }> {
+	return new Promise((resolve, reject) => {
+		const id = `patisserie-${Date.now()}`;
+		const child = spawn(piPath, ['--mode', 'rpc', '--session', sessionFile], { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+		let buffer = '';
+		let stderr = '';
+		let settled = false;
+
+		const finish = (err: Error | undefined, result?: { success: boolean; error?: string }) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			clearTimeout(timer);
+			// Closing stdin asks Pi to shut down cleanly.
+			child.stdin.end();
+			if (err) {
+				reject(err);
+			} else {
+				resolve(result!);
+			}
+		};
+
+		const timer = setTimeout(() => {
+			child.kill();
+			finish(new Error('Pi did not respond in time.'));
+		}, timeoutMs);
+
+		child.stdout.setEncoding('utf8');
+		child.stdout.on('data', (chunk: string) => {
+			buffer += chunk;
+			// RPC records are split on LF only (not U+2028/U+2029), per Pi's framing rules.
+			let newline: number;
+			while ((newline = buffer.indexOf('\n')) >= 0) {
+				const line = buffer.slice(0, newline).replace(/\r$/, '');
+				buffer = buffer.slice(newline + 1);
+				let record: unknown;
+				try {
+					record = JSON.parse(line);
+				} catch {
+					continue;
+				}
+				const r = record as { type?: unknown; id?: unknown; success?: unknown; error?: unknown };
+				if (r.type === 'response' && r.id === id) {
+					finish(undefined, { success: r.success === true, error: typeof r.error === 'string' ? r.error : undefined });
+				}
+			}
+		});
+		child.stderr.setEncoding('utf8');
+		child.stderr.on('data', (chunk: string) => {
+			stderr += chunk;
+		});
+		child.on('error', err => finish(err));
+		child.on('exit', code => {
+			finish(new Error(`Pi exited (code ${code ?? 'unknown'}) before it answered.${stderr ? ` ${stderr.trim().slice(0, 300)}` : ''}`));
+		});
+
+		child.stdin.on('error', () => { /* reported through 'exit' or the timeout */ });
+		child.stdin.write(JSON.stringify({ ...command, id }) + '\n');
+	});
+}
+
+/** Asks the user for a new name and lets Pi store it with `set_session_name`. Returns true if renamed. */
+export async function renameSession(session: PiSession, workspaceRoot: vscode.Uri): Promise<boolean> {
+	const name = await vscode.window.showInputBox({
+		title: 'Rename Pi Session',
+		prompt: `Session ${session.id}`,
+		value: session.name ?? '',
+		valueSelection: [0, (session.name ?? '').length],
+		validateInput: value => (value.trim() ? undefined : 'Enter a name.'),
+	});
+	if (name === undefined || name.trim() === (session.name ?? '')) {
+		return false;
+	}
+	const piPath = await resolvePiPath();
+	if (piPath === undefined) {
+		await showPiNotFound();
+		return false;
+	}
+	try {
+		const result = await vscode.window.withProgress(
+			{ location: vscode.ProgressLocation.Window, title: 'Renaming Pi session…' },
+			() => sendRpcCommand(piPath, session.filePath, workspaceRoot.fsPath, { type: 'set_session_name', name: name.trim() }),
+		);
+		if (!result.success) {
+			throw new Error(result.error ?? 'Pi refused the new name.');
+		}
+		return true;
+	} catch (err) {
+		void vscode.window.showErrorMessage(`Could not rename the session: ${err instanceof Error ? err.message : String(err)}`);
+		return false;
+	}
 }

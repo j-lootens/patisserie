@@ -12,10 +12,11 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
 	html, body { margin: 0; height: 100%; overflow: hidden; }
+	body { cursor: crosshair; user-select: none; }
 	pre { margin: 0; font: 12px/1.1 var(--vscode-editor-font-family, monospace); white-space: pre; }
 	.deep { color: #1e5aa8; } .deep2 { color: #173f78; } .sea { color: #3b8fd9; } .sea2 { color: #7cbcee; } .foam { color: #e8f4ff; } .net { color: #a9cdee; } .net2 { color: #d6e9fb; }
 	.w3 { color: #6e5a36; } .w2 { color: #8f7546; } .w1 { color: #b89c62; } .sand { color: #e2c582; }
-	.s0 { color: #f0a0a0; } .s1 { color: #f4f0e6; } .s2 { color: #e8b070; }
+	.groove { color: #6b5230; } .s0 { color: #f0a0a0; } .s1 { color: #f4f0e6; } .s2 { color: #e8b070; }
 </style></head>
 <body><pre id="beach"></pre>
 <script nonce="${nonce}">
@@ -32,7 +33,7 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	const SHELLS = ['@', 'o', 'e'];
 
 	let cols = 0, rows = 0;
-	let wet, dryRate, seeded, front, prevFront, drag, shells, rising, marks;
+	let wet, dryRate, seeded, drawn, front, prevFront, drag, shells, rising, marks;
 	let waves, newest, last = performance.now();
 	// The sea lies above the top edge: waves come in from there and drain back out of view.
 	const offshore = () => -rows * 0.15;
@@ -46,6 +47,8 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		dryRate = new Float32Array(cols * rows);
 		// Cells that dried from a spontaneous seed, or from a seeded neighbour; drying spreads faster from them.
 		seeded = new Uint8Array(cols * rows);
+		// Lines the user drew in the sand: the character to show per cell, or empty.
+		drawn = new Array(cols * rows).fill('');
 		for (let y = 0; y < rows; y++) {
 			for (let x = 0; x < cols; x++) {
 				dryRate[y * cols + x] = (0.03 + Math.random() * 0.08) * (0.5 + y / rows);
@@ -170,6 +173,8 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 				if (y < front[x]) {
 					wet[i] = 1;
 					seeded[i] = 0;
+					// The water smooths out anything drawn in the sand.
+					drawn[i] = '';
 					// Covered shells are rolled down the beach or carried off.
 					const shell = shells.get(i);
 					if (shell !== undefined && Math.random() < dt * 0.6) {
@@ -324,6 +329,9 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 							: swell > 0.15 ? '~' : swell > -0.15 ? (g % 2 ? '-' : '~')
 							: swell > -0.45 ? (g % 3 ? '-' : '.') : (g % 4 ? ' ' : '.');
 					}
+				} else if (drawn[i]) {
+					cls = 'groove';
+					ch = drawn[i];
 				} else if (shells.has(i)) {
 					const kind = shells.get(i);
 					cls = 's' + kind;
@@ -361,6 +369,48 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		render(t);
 		setTimeout(() => requestAnimationFrame(frame), 80);
 	}
+	// Drawing in the sand: drag the mouse to carve a thin dithered groove.
+	let pen;
+	function cellAt(e) {
+		return { x: Math.floor(e.clientX / charW), y: Math.floor(e.clientY / charH) };
+	}
+	const DENSITY = { '░': 1, '▒': 2, '▓': 3 };
+	function mark(x, y, ch) {
+		const i = y * cols + x;
+		if (x >= 0 && x < cols && y >= 0 && y < rows && y >= front[x] && (DENSITY[drawn[i]] ?? 0) < DENSITY[ch]) {
+			drawn[i] = ch;
+		}
+	}
+	function carve(x, y) {
+		mark(x, y, '▓');
+		// A fine brush: now and then a faint speck beside the line.
+		for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+			if (Math.random() < 0.12) {
+				mark(x + dx, y + dy, '░');
+			}
+		}
+	}
+	function strokeTo(to) {
+		const dx = to.x - pen.x, dy = to.y - pen.y;
+		const steps = Math.max(Math.abs(dx), Math.abs(dy));
+		for (let k = 1; k <= steps; k++) {
+			carve(Math.round(pen.x + dx * k / steps), Math.round(pen.y + dy * k / steps));
+		}
+		pen = to;
+	}
+	document.addEventListener('mousedown', e => {
+		pen = cellAt(e);
+		carve(pen.x, pen.y);
+	});
+	document.addEventListener('mousemove', e => {
+		if (pen && e.buttons & 1) {
+			strokeTo(cellAt(e));
+		}
+	});
+	document.addEventListener('mouseup', () => {
+		pen = undefined;
+	});
+
 	reset();
 	requestAnimationFrame(frame);
 </script></body></html>`;

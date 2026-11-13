@@ -45,6 +45,12 @@
 - **FR-31.** Pi doesn't keep the session file open, so the extension can't match a running Pi process to its session. It must treat a session that it opened in a terminal as live until the terminal closes. Clicking a session with an open terminal must show that terminal instead of starting Pi again.
 - **FR-32.** The list must recompute statuses every 30 seconds, so they change with time even when no file changes.
 
+## Forks
+
+- **FR-33.** The session list must show forks as a tree. A fork is listed under the session it was forked from, which Pi records as the file path in the header field `parentSession`. Forks of forks nest further. A fork whose parent is not in the list (deleted, or in another workspace) is shown at the top level. Each level is sorted by last activity (FR-4).
+- **FR-35.** A fork starts with a copy of its parent's entries, with the same entry IDs and costs. The cost of a fork must count only the entries that are not in the parent file, so the workspace total (FR-11) counts each entry once. The tooltip must show the copied cost separately.
+- **FR-34.** The tooltip must show the parent session ("Forked from") and the number of direct forks.
+
 ## Context view
 
 - **FR-20.** The extension must show a Context view below the session list. When the user selects a session, or chooses "Show Context" on it, the view must show what that session used.
@@ -67,4 +73,5 @@ Checked against Pi 1.5.2 (`@earendil-works/pi-coding-agent`) and its [session fo
 - **Session name.** A `session_info` entry with a `name` field. If there are many, the last one applies. If there is none, show the session ID.
 - **Last activity.** The `timestamp` (ISO 8601) of the last entry in the file.
 - **Cost.** Assistant messages contain `message.usage.cost.total` (USD). Other entries can contain `usage.cost.total`. If no entry has cost data, the cost is not available (FR-10).
+- **Fork.** `pi --fork <id>` writes a new session whose header has `parentSession`: the absolute path of the parent session file.
 - **Resume.** `pi --session <path|id>` opens a session by file path or by full or partial ID. `pi --resume` opens an interactive picker, and `pi --continue` resumes the most recent session.

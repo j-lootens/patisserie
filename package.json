@@ -2,7 +2,7 @@
   "name": "patisserie",
   "displayName": "Patisserie",
   "description": "Manage Pi sessions",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "j-lootens",
   "repository": {
     "type": "git",

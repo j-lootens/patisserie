@@ -82,7 +82,14 @@ function costOf(obj: unknown): number | undefined {
 	return typeof total === 'number' && Number.isFinite(total) ? total : undefined;
 }
 
-async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd?: string } | undefined> {
+interface Parsed {
+	session: PiSession;
+	cwd?: string;
+	/** Cost per entry ID, to find what a fork copied from its parent. */
+	entryCosts: Map<string, number>;
+}
+
+async function parseWithCwd(filePath: string): Promise<Parsed | undefined> {
 	let text: string;
 	try {
 		text = await readFile(filePath, 'utf8');
@@ -107,6 +114,7 @@ async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd
 	let name: string | undefined;
 	let cost: number | undefined;
 	let agentTurn = false;
+	const entryCosts = new Map<string, number>();
 	for (let i = 1; i < lines.length; i++) {
 		if (!lines[i].trim()) {
 			continue;
@@ -135,12 +143,19 @@ async function parseWithCwd(filePath: string): Promise<{ session: PiSession; cwd
 		for (const c of [costOf((entry.message as { usage?: unknown } | undefined)?.usage), costOf(entry.usage)]) {
 			if (c !== undefined) {
 				cost = (cost ?? 0) + c;
+				if (typeof entry.id === 'string') {
+					entryCosts.set(entry.id, (entryCosts.get(entry.id) ?? 0) + c);
+				}
 			}
 		}
 	}
 	return {
-		session: { id: header.id, name, filePath, startTime, lastActivity, cost, agentTurn },
+		session: {
+			id: header.id, name, filePath, startTime, lastActivity, cost, agentTurn,
+			parentSession: typeof header.parentSession === 'string' && header.parentSession ? header.parentSession : undefined,
+		},
 		cwd: typeof header.cwd === 'string' ? header.cwd : undefined,
+		entryCosts,
 	};
 }
 
@@ -156,6 +171,31 @@ function samePath(a: string, b: string): boolean {
 		: n(a) === n(b);
 }
 
+/**
+ * A fork starts with a copy of its parent's entries, with the same IDs and
+ * costs. Removes those from the fork's cost so they count once (FR-35).
+ */
+async function subtractInherited(p: Parsed, byFile: Map<string, Parsed>): Promise<Parsed> {
+	const parentFile = p.session.parentSession;
+	if (!parentFile) {
+		return p;
+	}
+	const parent = byFile.get(path.resolve(parentFile)) ?? await parseWithCwd(parentFile);
+	if (!parent) {
+		return p;
+	}
+	let inherited = 0;
+	let own: number | undefined;
+	for (const [id, c] of p.entryCosts) {
+		if (parent.entryCosts.has(id)) {
+			inherited += c;
+		} else {
+			own = (own ?? 0) + c;
+		}
+	}
+	return { ...p, session: { ...p.session, cost: own, inheritedCost: inherited || undefined } };
+}
+
 /** Lists the sessions for `workspaceRoot`, newest last activity first (FR-4). Read-only (FR-19). */
 export async function listSessions(workspaceRoot: string): Promise<PiSession[]> {
 	const { dir, custom } = await resolveDir(workspaceRoot);
@@ -165,9 +205,11 @@ export async function listSessions(workspaceRoot: string): Promise<PiSession[]> 
 	} catch {
 		return [];
 	}
-	const parsed = await Promise.all(files.map((f) => parseWithCwd(path.join(dir, f))));
-	return parsed
-		.filter((p): p is { session: PiSession; cwd?: string } => p !== undefined)
+	const parsed = (await Promise.all(files.map((f) => parseWithCwd(path.join(dir, f)))))
+		.filter((p): p is Parsed => p !== undefined);
+	const byFile = new Map(parsed.map((p) => [path.resolve(p.session.filePath), p]));
+	const withOwnCost = await Promise.all(parsed.map((p) => subtractInherited(p, byFile)));
+	return withOwnCost
 		.filter((p) => !custom || (p.cwd !== undefined && samePath(p.cwd, workspaceRoot)))
 		.map((p) => p.session)
 		.sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
@@ -189,4 +231,28 @@ export function sessionStatus(session: PiSession, now: number, hasOpenTerminal =
 		return age < WORKING_STALE_MS ? 'working' : (hasOpenTerminal ? 'waiting' : 'inactive');
 	}
 	return hasOpenTerminal || age < WAITING_RECENT_MS ? 'waiting' : 'inactive';
+}
+
+/** Sessions grouped by fork parent. Keys are parent session IDs; `undefined` holds the roots. */
+export type SessionForest = Map<string | undefined, PiSession[]>;
+
+/**
+ * Nests forks under the session they came from (FR-33). A fork whose parent is
+ * not in the list (deleted, or in another workspace) becomes a root. Keeps the
+ * order of `sessions` inside each group.
+ */
+export function buildSessionForest(sessions: readonly PiSession[]): SessionForest {
+	const byFile = new Map(sessions.map(s => [path.resolve(s.filePath), s]));
+	const forest: SessionForest = new Map();
+	for (const session of sessions) {
+		const parent = session.parentSession ? byFile.get(path.resolve(session.parentSession)) : undefined;
+		const key = parent && parent !== session ? parent.id : undefined;
+		const group = forest.get(key);
+		if (group) {
+			group.push(session);
+		} else {
+			forest.set(key, [session]);
+		}
+	}
+	return forest;
 }

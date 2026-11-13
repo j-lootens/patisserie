@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { PiSession, SessionStatus } from '../sessions/types';
-import { getSessionDir, listSessions, sessionStatus } from '../sessions/sessionStore';
+import { SessionForest, buildSessionForest, getSessionDir, listSessions, sessionStatus } from '../sessions/sessionStore';
 import { formatCost, totalCost } from './format';
 
 export interface SessionsLoadedEvent {
@@ -39,6 +39,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 	/** Terminals the extension opened, by session ID. */
 	private readonly terminals = new Map<string, vscode.Terminal>();
 	private readonly disposables: vscode.Disposable[] = [];
+	private forest: SessionForest = new Map();
 
 	constructor(private readonly workspaceRoot: vscode.Uri | undefined) {
 		void this.startWatching();
@@ -68,7 +69,11 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 	}
 
 	getTreeItem(session: PiSession): vscode.TreeItem {
-		const item = new vscode.TreeItem(session.name || session.id, vscode.TreeItemCollapsibleState.None);
+		const forks = this.forest.get(session.id)?.length ?? 0;
+		const item = new vscode.TreeItem(
+			session.name || session.id,
+			forks > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+		);
 		item.id = session.id;
 		item.contextValue = 'session';
 		const status = sessionStatus(session, Date.now(), this.terminals.has(session.id));
@@ -81,29 +86,58 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 		tip.appendMarkdown(`Started: ${session.startTime.toLocaleString()}\n\n`);
 		tip.appendMarkdown(`Last activity: ${session.lastActivity.toLocaleString()}\n\n`);
 		tip.appendMarkdown(`Cost: ${formatCost(session.cost)}`);
+		if (session.inheritedCost !== undefined) {
+			tip.appendMarkdown(` (plus ${formatCost(session.inheritedCost)} copied from the parent)`);
+		}
+		const parent = this.parentOf(session);
+		if (parent) {
+			tip.appendMarkdown(`\n\nForked from: ${escapeMd(parent.name || parent.id)}`);
+		}
+		if (forks > 0) {
+			tip.appendMarkdown(`\n\nForks: ${forks}`);
+		}
 		item.tooltip = tip;
 		item.command = { command: 'patisserie.openSession', title: 'Open Session', arguments: [session] };
 		return item;
 	}
 
 	async getChildren(element?: PiSession): Promise<PiSession[]> {
-		if (element || !this.workspaceRoot) {
+		if (element) {
+			return this.forest.get(element.id) ?? [];
+		}
+		if (!this.workspaceRoot) {
 			return [];
 		}
 		try {
 			const sessions = await listSessions(this.workspaceRoot.fsPath);
+			this.forest = buildSessionForest(sessions);
 			this.errorShown = false;
 			this.loadEmitter.fire({ sessions, totalCost: totalCost(sessions) });
-			return sessions;
+			return this.forest.get(undefined) ?? [];
 		} catch (err) {
 			console.error('patisserie: failed to list Pi sessions', err);
 			if (!this.errorShown) {
 				this.errorShown = true;
 				void vscode.window.showErrorMessage(`Patisserie: could not read Pi sessions (${err instanceof Error ? err.message : String(err)}).`);
 			}
+			this.forest = new Map();
 			this.loadEmitter.fire({ sessions: [], totalCost: undefined });
 			return [];
 		}
+	}
+
+	/** Needed by `TreeView.reveal` for nested forks. */
+	getParent(session: PiSession): PiSession | undefined {
+		return this.parentOf(session);
+	}
+
+	private parentOf(session: PiSession): PiSession | undefined {
+		for (const [parentId, children] of this.forest) {
+			if (parentId !== undefined && children.includes(session)) {
+				return [...this.forest.values()].flat().find(s => s.id === parentId);
+			}
+		}
+		return undefined;
 	}
 
 	/** Reloads the list (FR-6). */

@@ -2,7 +2,7 @@ import * as assert from 'node:assert';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { WAITING_RECENT_MS, WORKING_STALE_MS, encodeCwd, getSessionDir, listSessions, parseSessionFile, sessionStatus } from '../sessions/sessionStore';
+import { WAITING_RECENT_MS, buildSessionForest, WORKING_STALE_MS, encodeCwd, getSessionDir, listSessions, parseSessionFile, sessionStatus } from '../sessions/sessionStore';
 
 const ENV_KEYS = ['PI_CODING_AGENT_SESSION_DIR', 'PI_CODING_AGENT_DIR'] as const;
 
@@ -204,5 +204,60 @@ suite('sessionStatus', () => {
 		assert.strictEqual(sessionStatus(done, t + 1000), 'waiting');
 		assert.strictEqual(sessionStatus(done, t + WAITING_RECENT_MS + 1), 'inactive');
 		assert.strictEqual(sessionStatus(done, t + WAITING_RECENT_MS + 1, true), 'waiting');
+	});
+});
+
+suite('buildSessionForest', () => {
+	const at = (id: string, parentSession?: string) => ({
+		id, filePath: `/s/${id}.jsonl`, startTime: new Date(0), lastActivity: new Date(0), parentSession,
+	});
+
+	test('nests forks under their parent and keeps orphans as roots', () => {
+		const forest = buildSessionForest([
+			at('fork2', '/s/fork1.jsonl'),
+			at('fork1', '/s/root.jsonl'),
+			at('orphan', '/gone/x.jsonl'),
+			at('root'),
+		]);
+		assert.deepStrictEqual(forest.get(undefined)?.map(s => s.id), ['orphan', 'root']);
+		assert.deepStrictEqual(forest.get('root')?.map(s => s.id), ['fork1']);
+		assert.deepStrictEqual(forest.get('fork1')?.map(s => s.id), ['fork2']);
+	});
+});
+
+suite('fork cost', () => {
+	let tmp: string;
+	let saved: string | undefined;
+
+	setup(async () => {
+		tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'patisserie-fork-'));
+		saved = process.env.PI_CODING_AGENT_SESSION_DIR;
+		process.env.PI_CODING_AGENT_SESSION_DIR = tmp;
+	});
+
+	teardown(async () => {
+		if (saved === undefined) {
+			delete process.env.PI_CODING_AGENT_SESSION_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_SESSION_DIR = saved;
+		}
+		await fs.rm(tmp, { recursive: true, force: true });
+	});
+
+	test('a fork does not count the entries it copied from its parent', async () => {
+		const paid = (id: string, total: number) => ({
+			type: 'message', id, timestamp: '2026-11-01T10:00:01.000Z', message: { role: 'assistant', usage: { cost: { total } } },
+		});
+		const parentFile = path.join(tmp, 'a_parent.jsonl');
+		await fs.writeFile(parentFile, jsonl(header('parent', '2026-11-01T10:00:00.000Z'), paid('m1', 1), paid('m2', 2)));
+		await fs.writeFile(path.join(tmp, 'b_fork.jsonl'), jsonl(
+			{ ...header('fork', '2026-11-01T11:00:00.000Z'), parentSession: parentFile },
+			paid('m1', 1), paid('m2', 2), paid('m3', 0.5),
+		));
+		const sessions = await listSessions('/ws');
+		const fork = sessions.find(s => s.id === 'fork');
+		assert.strictEqual(fork?.cost, 0.5);
+		assert.strictEqual(fork?.inheritedCost, 3);
+		assert.strictEqual(sessions.find(s => s.id === 'parent')?.cost, 3);
 	});
 });

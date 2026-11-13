@@ -13,7 +13,7 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 <style>
 	html, body { margin: 0; height: 100%; overflow: hidden; }
 	pre { margin: 0; font: 12px/1.1 var(--vscode-editor-font-family, monospace); white-space: pre; }
-	.deep { color: #1e5aa8; } .sea { color: #3b8fd9; } .foam { color: #e8f4ff; } .net { color: #a9cdee; } .net2 { color: #d6e9fb; }
+	.deep { color: #1e5aa8; } .deep2 { color: #173f78; } .sea { color: #3b8fd9; } .sea2 { color: #7cbcee; } .foam { color: #e8f4ff; } .net { color: #a9cdee; } .net2 { color: #d6e9fb; }
 	.w3 { color: #6e5a36; } .w2 { color: #8f7546; } .w1 { color: #b89c62; } .sand { color: #e2c582; }
 	.s0 { color: #f0a0a0; } .s1 { color: #f4f0e6; } .s2 { color: #e8b070; }
 </style></head>
@@ -32,7 +32,7 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	const SHELLS = ['@', 'o', 'e'];
 
 	let cols = 0, rows = 0;
-	let wet, dryRate, front, prevFront, drag, shells;
+	let wet, dryRate, seeded, front, prevFront, drag, shells, rising, marks;
 	let waves, newest, last = performance.now();
 	// The sea lies above the top edge: waves come in from there and drain back out of view.
 	const offshore = () => -rows * 0.15;
@@ -44,6 +44,8 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		wet = new Float32Array(cols * rows);
 		// Each cell dries at its own rate; higher up the beach drains faster.
 		dryRate = new Float32Array(cols * rows);
+		// Cells that dried from a spontaneous seed, or from a seeded neighbour; drying spreads faster from them.
+		seeded = new Uint8Array(cols * rows);
 		for (let y = 0; y < rows; y++) {
 			for (let x = 0; x < cols; x++) {
 				dryRate[y * cols + x] = (0.03 + Math.random() * 0.08) * (0.5 + y / rows);
@@ -52,6 +54,9 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		front = new Float32Array(cols).fill(offshore());
 		prevFront = new Float32Array(front);
 		drag = new Float32Array(front);
+		rising = new Uint8Array(cols);
+		// Foam lines left at the highest point each wave reached: per column, a list of { y, s, rate }.
+		marks = Array.from({ length: cols }, () => []);
 		shells = new Map();
 		newest = newWave(performance.now());
 		waves = [newest];
@@ -142,12 +147,29 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 			prevFront[x] = front[x];
 			front[x] = Math.max(offshore(), ...waves.map(w => waveFront(w, x, t).y));
 			const retreating = front[x] < prevFront[x];
+			// Where the water turns back, it leaves a thin line of foam that slowly dries out.
+			// Water running over a line washes it away.
+			if (retreating && rising[x] && prevFront[x] > 0) {
+				const y = Math.ceil(prevFront[x]);
+				// Broad patches where more foam piles up, so the line is 1 to 3 rows thick.
+				const pile = Math.sin(x * 0.09 + t / 3000) * 0.6 + Math.sin(x * 0.23 + newest.seed) * 0.4;
+				const thick = 1 + (pile > 0.2 ? 1 : 0) + (pile > 0.65 ? 1 : 0);
+				marks[x] = marks[x].filter(m => Math.abs(m.y - y) > 2);
+				marks[x].push({ y, thick, s: 1, rate: 0.02 + Math.random() * 0.03 });
+				// The turning water drops what it carried: shells collect along the foam line.
+				if (Math.random() < 0.06 && y + thick < rows) {
+					shells.set((y + Math.floor(Math.random() * (thick + 1))) * cols + x, Math.floor(Math.random() * SHELLS.length));
+				}
+			}
+			rising[x] = retreating ? 0 : 1;
+			marks[x] = marks[x].filter(m => m.y >= front[x] && (m.s -= m.rate * dt) > 0);
 			// The water surface follows the front with a lag, so its texture is dragged along behind it.
 			drag[x] += (front[x] - drag[x]) * Math.min(1, dt * 1.5);
 			for (let y = 0; y < rows; y++) {
 				const i = y * cols + x;
 				if (y < front[x]) {
 					wet[i] = 1;
+					seeded[i] = 0;
 					// Covered shells are rolled down the beach or carried off.
 					const shell = shells.get(i);
 					if (shell !== undefined && Math.random() < dt * 0.6) {
@@ -157,7 +179,6 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 						}
 					}
 				} else {
-					wet[i] = Math.max(0, wet[i] - dryRate[i] * dt);
 					// The retreating water leaves shells on the line it just uncovered.
 					if (retreating && y < prevFront[x] && Math.random() < 0.004) {
 						shells.set(i, Math.floor(Math.random() * SHELLS.length));
@@ -165,6 +186,7 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 				}
 			}
 		}
+		dry(dt);
 	}
 
 	/** Thickness of a wave's foam band at column x: lumpy along the front, fat while breaking. */
@@ -179,7 +201,64 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		return v < 0.3 ? '▓' : v < 0.6 ? '▒' : v < 0.85 ? '░' : (g % 2 ? '°' : '·');
 	}
 
+	const DRY = 0.05;
+
+	/**
+	 * Dries the uncovered sand. Wet sand mostly dries from its edges: the more dry
+	 * neighbours a cell has, the faster it dries, and faster still next to a seeded
+	 * patch. Now and then a dry seed appears in the middle of wet sand.
+	 */
+	function dry(dt) {
+		const before = wet.slice();
+		for (let y = 0; y < rows; y++) {
+			for (let x = 0; x < cols; x++) {
+				const i = y * cols + x;
+				if (y < front[x] || before[i] <= 0) {
+					continue;
+				}
+				if (before[i] > DRY && Math.random() < dt * 0.0015 * (1.2 - before[i])) {
+					wet[i] = 0;
+					seeded[i] = 1;
+					continue;
+				}
+				let dryNeighbours = 0;
+				let seedNeighbour = 0;
+				for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+					const nx = x + dx, ny = y + dy;
+					if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) {
+						continue;
+					}
+					const n = ny * cols + nx;
+					if (ny >= front[nx] && before[n] <= DRY) {
+						dryNeighbours++;
+						seedNeighbour |= seeded[n];
+					}
+				}
+				const spread = (dryNeighbours / 4) * (seedNeighbour ? 1.2 : 0.7);
+				wet[i] = Math.max(0, before[i] - (dryRate[i] * 0.4 + spread * dryRate[i] * 6) * dt);
+				if (wet[i] <= DRY && seedNeighbour) {
+					seeded[i] = 1;
+				}
+			}
+		}
+	}
+
+	/** Strength of the foam lines per cell; lower rows of a thick line are a little thinner. */
+	function markGrid() {
+		const grid = new Float32Array(cols * rows);
+		for (let x = 0; x < cols; x++) {
+			for (const m of marks[x]) {
+				for (let k = 0; k < m.thick && m.y + k < rows; k++) {
+					const i = (m.y + k) * cols + x;
+					grid[i] = Math.max(grid[i], m.s * (1 - k * 0.25));
+				}
+			}
+		}
+		return grid;
+	}
+
 	function render(t) {
+		const lines = markGrid();
 		let html = '';
 		const fronts = [];
 		for (let x = 0; x < cols; x++) {
@@ -208,29 +287,52 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 				} else if (y < front[x]) {
 					// Texture coordinates move with the water: v is the row within the dragged surface.
 					const v = y - drag[x] * 0.85;
-					const swell = Math.sin(v * 1.1 - t / 700);
+					// Layered ripples moving with the water, plus a little per-cell grain.
+					const swell = Math.sin(v * 1.1 - t / 700) * 0.5
+						+ Math.sin(x * 0.17 + v * 0.6 - t / 2500) * 0.3
+						+ Math.sin(x * 0.41 - v * 0.35 + t / 3100) * 0.2
+						+ ((g % 7) - 3) * 0.04;
 					// Water far behind the front is deeper.
 					const deep = front[x] - y > rows * 0.35;
-					// A lace of foam: thin lines where crossing ripples cancel out. It is densest
-					// just behind the waterline, fades out to sea, and slowly changes shape.
-					const near = Math.max(0, 1 - (front[x] - y) / (rows * 0.45));
-					const lace = Math.abs(
+					// A web of foam, like the lace left behind a breaking wave: two crossing ripple
+					// fields, with foam where either one cancels out, so the lines enclose dark cells.
+					// It is dense in a wide band behind the waterline, then breaks into patches out to sea.
+					const near = Math.max(0, 1 - (front[x] - y) / (rows * 0.7));
+					const laceA = Math.abs(
 						Math.sin(x * 0.45 + v * 0.9 + t / 4000)
 						+ Math.sin(x * 0.21 - v * 1.3 + 2 - t / 5000)
 						+ Math.sin((x + v) * 0.33 + t / 3000),
 					);
-					const width = 0.1 + near * 0.45;
+					const laceB = Math.abs(
+						Math.sin(x * 0.31 - v * 1.1 + 4 - t / 4500)
+						+ Math.sin(x * 0.57 + v * 0.7 + 1 + t / 3500)
+						+ Math.sin((x - v) * 0.26 - t / 6000),
+					);
+					const lace = Math.min(laceA, laceB);
+					// Broad patches where the foam is thicker or thinner.
+					const patch = 0.5 + 0.5 * Math.sin(x * 0.06 + v * 0.15 + t / 7000) * Math.sin(x * 0.023 - v * 0.09 + 3);
+					const width = (0.05 + near * near * 0.5) * (0.5 + patch);
 					if (lace < width) {
-						cls = lace < width * 0.4 ? 'net2' : 'net';
-						ch = dither(0.5 + (lace / width) * 0.5 - near * 0.2, g);
+						// Thin glyphs keep it a web of lines; only the core right behind the front is solid.
+						const r = lace / width;
+						cls = r < 0.4 ? 'net2' : 'net';
+						ch = r < 0.25 && near > 0.7 ? '▒' : r < 0.55 ? (g % 3 ? '░' : '°') : (g % 2 ? '·' : '˙');
 					} else {
-						cls = deep ? 'deep' : 'sea';
-						ch = swell > 0.6 ? '^' : swell > -0.2 ? '~' : (deep ? '-' : ' ');
+						// Crests catch the light, troughs are darker.
+						cls = swell > 0.55 ? (deep ? 'sea' : 'sea2') : swell < -0.45 ? (deep ? 'deep2' : 'deep') : (deep ? 'deep' : 'sea');
+						ch = swell > 0.7 ? '^' : swell > 0.45 ? (g % 3 ? '~' : '≈')
+							: swell > 0.15 ? '~' : swell > -0.15 ? (g % 2 ? '-' : '~')
+							: swell > -0.45 ? (g % 3 ? '-' : '.') : (g % 4 ? ' ' : '.');
 					}
 				} else if (shells.has(i)) {
 					const kind = shells.get(i);
 					cls = 's' + kind;
 					ch = SHELLS[kind];
+				} else if (lines[i] > (grain(x, y + 3) % 10) / 40) {
+					// The foam line thins out as it dries: bright and solid first, then a few specks.
+					const m = lines[i];
+					cls = m > 0.35 ? 'foam' : 'net';
+					ch = m > 0.7 ? (g % 3 ? '°' : 'o') : m > 0.35 ? (g % 2 ? '°' : '·') : (g % 2 ? '·' : '˙');
 				} else {
 					const w = wet[i];
 					cls = w > 0.66 ? 'w3' : w > 0.33 ? 'w2' : w > 0.05 ? 'w1' : 'sand';

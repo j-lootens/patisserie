@@ -21,7 +21,8 @@ function expandTilde(p: string): string {
 	return p;
 }
 
-function getAgentDir(): string {
+/** Pi's agent directory: `PI_CODING_AGENT_DIR` or `~/.pi/agent`. */
+export function getAgentDir(): string {
 	const env = process.env.PI_CODING_AGENT_DIR;
 	return env ? expandTilde(env) : path.join(os.homedir(), '.pi', 'agent');
 }

@@ -31,6 +31,17 @@
 - **FR-18.** If the extension cannot find the Pi CLI, it must show an error message with a link to the settings.
 - **FR-19.** The extension must read session data in read-only mode. It must not change or delete session files.
 
+## Context view
+
+- **FR-20.** The extension must show a Context view below the session list. When the user selects a session, or chooses "Show Context" on it, the view must show what that session used.
+- **FR-21.** The view must list the user prompts, in order. If the user clicks a prompt, the extension must open its full text in a read-only editor. A `/skill:<name>` command must be shown as the command, not as the expanded skill text.
+- **FR-22.** The view must list the context files (`AGENTS.md`, `CLAUDE.md` and the like) that are recorded in the session's system prompt (`<project_instructions path="…">`). If the session records none, the view must list the context files found on disk now, marked "on disk now".
+- **FR-23.** The view must list the skills that the session used, by a `read` of a `SKILL.md` or by a `/skill:<name>` command, and the skills that Pi offered (`<available_skills>` in the system prompt).
+- **FR-24.** The view must list the files that tools read, edited or wrote, with a count for each kind. If the user clicks a file, context file or skill, the extension must open it.
+- **FR-25.** The view must list the tools called, with call counts, the models used, and compactions with their summaries.
+- **FR-26.** Under "On Disk Now", the view must list `SYSTEM.md`, `APPEND_SYSTEM.md`, prompt templates, extensions and MCP config for the session's working directory. These are not recorded in the session, so the view must say they may have changed since it ran.
+- **FR-27.** The view must update when the session file changes.
+
 ## Pi session storage
 
 Checked against Pi 1.5.2 (`@earendil-works/pi-coding-agent`) and its [session format docs](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/session-format.md).

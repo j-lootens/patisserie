@@ -31,6 +31,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 	getTreeItem(session: PiSession): vscode.TreeItem {
 		const item = new vscode.TreeItem(session.name || session.id, vscode.TreeItemCollapsibleState.None);
 		item.id = session.id;
+		item.contextValue = 'session';
 		item.description = formatCost(session.cost);
 		item.iconPath = new vscode.ThemeIcon('comment-discussion');
 		const tip = new vscode.MarkdownString(undefined, true);

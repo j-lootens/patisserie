@@ -1,1 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 5h14M5 5v14M10 5v14"/><path d="M14 5c0 7 0 11 4 14"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- crust dome -->
+  <path d="M3 13c0-4 4-7 9-7s9 3 9 7"/>
+  <!-- crimped rim -->
+  <path d="M2.5 13.5c1 .8 2 .8 3 0s2-.8 3 0 2 .8 3 0 2-.8 3 0 2 .8 3 0 2-.8 3 0"/>
+  <!-- dish -->
+  <path d="M3.5 15.5l1.5 3h14l1.5-3"/>
+  <!-- steam vents -->
+  <path d="M9.5 10l1 1M14.5 10l-1 1M12 8.5v1.5"/>
+</svg>

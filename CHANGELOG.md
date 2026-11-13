@@ -1,9 +1,7 @@
-# Change Log
-
-All notable changes to the "patisserie" extension will be documented in this file.
-
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+# Change log
 
 ## [Unreleased]
 
-- Initial release
+- Pi Sessions view: session list with cost, total cost, live status and fork tree; resume, rename, fork, new and continue actions.
+- Context view: prompts, context files, skills, files touched, tools, models and compactions per session.
+- Beach panel: an ASCII beach simulation you can draw in.

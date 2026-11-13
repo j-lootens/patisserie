@@ -1,0 +1,40 @@
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { cursor: crosshair; user-select: none; }
+pre { margin: 0; font: 12px/1.1 var(--vscode-editor-font-family, monospace); white-space: pre; }
+
+/* Water */
+.deep { color: #1e5aa8; }
+.deep2 { color: #173f78; }
+.deepG { color: #1d6a78; }
+.sea { color: #3b8fd9; }
+.sea2 { color: #7cbcee; }
+.seaG { color: #3aa39a; }
+
+/* Foam */
+.foam { color: #e8f4ff; }
+.foamG { color: #b9c2c8; }
+.net { color: #a9cdee; }
+.net2 { color: #d6e9fb; }
+
+/* Sand: plain wet levels, tints, coloured grains, and darkening for tinted wet sand */
+.w3 { color: #6e5a36; }
+.w2 { color: #8f7546; }
+.w1 { color: #b89c62; }
+.sand { color: #e2c582; }
+.sandL { color: #efd9a4; }
+.sandD { color: #c9a868; }
+.sandG { color: #a99f8a; }
+.c0 { color: #d9828c; }
+.c1 { color: #7fa7d6; }
+.c2 { color: #8fbf7a; }
+.c3 { color: #e09a5a; }
+.c4 { color: #b08fd0; }
+.b3 { filter: brightness(0.5); }
+.b2 { filter: brightness(0.65); }
+.b1 { filter: brightness(0.82); }
+
+/* Drawings and shells */
+.groove { color: #6b5230; }
+.s0 { color: #f0a0a0; }
+.s1 { color: #f4f0e6; }
+.s2 { color: #e8b070; }

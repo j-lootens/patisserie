@@ -31,6 +31,12 @@
 - **FR-18.** If the extension cannot find the Pi CLI, it must show an error message with a link to the settings.
 - **FR-19.** The extension must read session data in read-only mode. It must not change or delete session files. Changes to a session (FR-28) must go through the Pi CLI, which writes the file.
 
+## Session actions
+
+- **FR-36.** The session list title bar must have a "New Named Session" button. The extension must ask for a name and start `pi --name <name>` in a new terminal in the workspace root.
+- **FR-37.** The session list title bar must have a "Continue Latest Session" button that starts `pi --continue` in a new terminal in the workspace root.
+- **FR-38.** The context menu of a session must have "Fork Session in Terminal", which starts `pi --fork <session-id>` in a new terminal in the workspace root.
+
 ## Rename
 
 - **FR-28.** The user must be able to rename a session from the session's context menu or with F2 in the session list. The extension must ask for the new name, prefilled with the current name, and store it with Pi's RPC command `set_session_name` (`pi --mode rpc --session <file>`). If Pi fails or doesn't answer within 15 seconds, the extension must show an error.
@@ -48,8 +54,8 @@
 ## Forks
 
 - **FR-33.** The session list must show forks as a tree. A fork is listed under the session it was forked from, which Pi records as the file path in the header field `parentSession`. Forks of forks nest further. A fork whose parent is not in the list (deleted, or in another workspace) is shown at the top level. Each level is sorted by last activity (FR-4).
-- **FR-35.** A fork starts with a copy of its parent's entries, with the same entry IDs and costs. The cost of a fork must count only the entries that are not in the parent file, so the workspace total (FR-11) counts each entry once. The tooltip must show the copied cost separately.
 - **FR-34.** The tooltip must show the parent session ("Forked from") and the number of direct forks.
+- **FR-35.** A fork starts with a copy of its parent's entries, with the same entry IDs and costs. The cost of a fork must count only the entries that are not in the parent file, so the workspace total (FR-11) counts each entry once. The tooltip must show the copied cost separately.
 
 ## Context view
 

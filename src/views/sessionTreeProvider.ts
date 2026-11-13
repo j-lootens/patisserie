@@ -40,6 +40,8 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 	private readonly terminals = new Map<string, vscode.Terminal>();
 	private readonly disposables: vscode.Disposable[] = [];
 	private forest: SessionForest = new Map();
+	/** Fork parent of each nested session, by session ID. */
+	private parents = new Map<string, PiSession>();
 
 	constructor(private readonly workspaceRoot: vscode.Uri | undefined) {
 		void this.startWatching();
@@ -89,7 +91,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 		if (session.inheritedCost !== undefined) {
 			tip.appendMarkdown(` (plus ${formatCost(session.inheritedCost)} copied from the parent)`);
 		}
-		const parent = this.parentOf(session);
+		const parent = this.getParent(session);
 		if (parent) {
 			tip.appendMarkdown(`\n\nForked from: ${escapeMd(parent.name || parent.id)}`);
 		}
@@ -110,7 +112,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 		}
 		try {
 			const sessions = await listSessions(this.workspaceRoot.fsPath);
-			this.forest = buildSessionForest(sessions);
+			this.setForest(buildSessionForest(sessions));
 			this.errorShown = false;
 			this.loadEmitter.fire({ sessions, totalCost: totalCost(sessions) });
 			return this.forest.get(undefined) ?? [];
@@ -120,7 +122,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 				this.errorShown = true;
 				void vscode.window.showErrorMessage(`Patisserie: could not read Pi sessions (${err instanceof Error ? err.message : String(err)}).`);
 			}
-			this.forest = new Map();
+			this.setForest(new Map());
 			this.loadEmitter.fire({ sessions: [], totalCost: undefined });
 			return [];
 		}
@@ -128,16 +130,19 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<PiSession>, 
 
 	/** Needed by `TreeView.reveal` for nested forks. */
 	getParent(session: PiSession): PiSession | undefined {
-		return this.parentOf(session);
+		return this.parents.get(session.id);
 	}
 
-	private parentOf(session: PiSession): PiSession | undefined {
-		for (const [parentId, children] of this.forest) {
-			if (parentId !== undefined && children.includes(session)) {
-				return [...this.forest.values()].flat().find(s => s.id === parentId);
+	private setForest(forest: SessionForest): void {
+		this.forest = forest;
+		const byId = new Map([...forest.values()].flat().map(s => [s.id, s]));
+		this.parents = new Map();
+		for (const [parentId, children] of forest) {
+			const parent = parentId === undefined ? undefined : byId.get(parentId);
+			if (parent) {
+				children.forEach(child => this.parents.set(child.id, parent));
 			}
 		}
-		return undefined;
 	}
 
 	/** Reloads the list (FR-6). */

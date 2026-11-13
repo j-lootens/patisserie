@@ -26,7 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
 		contextProvider,
 		contextView,
 		vscode.workspace.registerTextDocumentContentProvider(TEXT_SCHEME, texts),
-		vscode.window.registerWebviewViewProvider(BeachViewProvider.viewId, new BeachViewProvider()),
+		vscode.window.registerWebviewViewProvider(BeachViewProvider.viewId, new BeachViewProvider(context.extensionUri)),
 		provider.onDidLoad(({ sessions, totalCost }) => {
 			treeView.description = `Total: ${formatCost(totalCost)}`;
 			// Keep the Context view in step with the session file (FR-7).

@@ -4,3 +4,8 @@ bower_components/
 
 build/
 dist/
+
+# VS Code extension
+out/
+.vscode-test/
+*.vsix

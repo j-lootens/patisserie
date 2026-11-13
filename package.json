@@ -12,12 +12,67 @@
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "patisserie",
+          "title": "Pi Sessions",
+          "icon": "media/sessions.svg"
+        }
+      ]
+    },
+    "views": {
+      "patisserie": [
+        {
+          "id": "patisserie.sessions",
+          "name": "Sessions"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "patisserie.sessions",
+        "contents": "No Pi sessions for this workspace."
+      }
+    ],
     "commands": [
       {
-        "command": "patisserie.helloWorld",
-        "title": "Hello World"
+        "command": "patisserie.refresh",
+        "title": "Refresh",
+        "icon": "$(refresh)",
+        "category": "Pi"
+      },
+      {
+        "command": "patisserie.openSession",
+        "title": "Open Session in Terminal",
+        "category": "Pi"
       }
-    ]
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "patisserie.refresh",
+          "when": "view == patisserie.sessions",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "patisserie.openSession",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Patisserie",
+      "properties": {
+        "patisserie.piPath": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Path to the Pi CLI. Leave empty to find `pi` on `PATH`."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

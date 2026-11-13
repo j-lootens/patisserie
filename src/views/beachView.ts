@@ -34,7 +34,8 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	let cols = 0, rows = 0;
 	let wet, dryRate, front, prevFront, drag, shells;
 	let waves, newest, last = performance.now();
-	const shoreRow = () => rows * 0.3;
+	// The sea lies above the top edge: waves come in from there and drain back out of view.
+	const offshore = () => -rows * 0.15;
 
 	/** (Re)builds the beach for the current panel size. */
 	function reset() {
@@ -48,7 +49,7 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 				dryRate[y * cols + x] = (0.03 + Math.random() * 0.08) * (0.5 + y / rows);
 			}
 		}
-		front = new Float32Array(cols).fill(shoreRow());
+		front = new Float32Array(cols).fill(offshore());
 		prevFront = new Float32Array(front);
 		drag = new Float32Array(front);
 		shells = new Map();
@@ -63,12 +64,15 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	function newWave(start) {
 		return {
 			start,
-			inMs: 1400 + Math.random() * 2400,
+			inMs: 2800 + Math.random() * 2400,
 			outMs: 3500 + Math.random() * 3000,
-			from: shoreRow() * (0.1 + Math.random() * 0.3),
-			peak: shoreRow() + (0.2 + Math.random() * 0.45) * rows,
-			to: shoreRow() * 0.8,
+			from: -rows * (0.2 + Math.random() * 0.3),
+			peak: (0.3 + Math.random() * 0.5) * rows,
+			to: offshore() - 3,
 			next: nextGap(),
+			inSpread: 0.3 + Math.random() * 0.7,
+			outSpread: 0.15 + Math.random() * 0.45,
+			reachVar: 0.04 + Math.random() * 0.1,
 			seed: Math.random() * 100,
 		};
 	}
@@ -84,22 +88,40 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 			: 1.1 + Math.random() * 0.8;
 	}
 
+	/** The fastest any part of a wave may run in, so it never shoots up the beach. */
+	const MIN_IN_MS = 1800;
+
 	const easeOut = p => 1 - (1 - p) * (1 - p);
 	const easeInOut = p => p < 0.5 ? 2 * p * p : 1 - 2 * (1 - p) * (1 - p);
 
 	/** Front row of wave w at column x, and whether it is still running up. */
+	/**
+	 * How fast a wave moves at column x, between 1 and 1 + spread: a smooth,
+	 * per-wave mix of bumps, so some stretches of the beach run ahead.
+	 */
+	function speedAt(w, x, spread, salt) {
+		// Low frequencies only, so faster and slower stretches are broad.
+		const n = Math.sin(x * 0.045 + w.seed * salt) * 0.45 + Math.sin(x * 0.083 + w.seed * 3 * salt) * 0.3
+			+ Math.sin(x * 0.019 - w.seed * salt) * 0.25;
+		return 1 + spread * (0.5 + 0.5 * n);
+	}
+
+	/** Front row of wave w at column x, and whether it is still running up there. */
 	function waveFront(w, x, t) {
 		const el = t - w.start;
-		const wobble = Math.sin(x * 0.15 + w.seed + t / 4000) * 0.8 + Math.sin(x * 0.05 - t / 6000 + w.seed) * 1.2;
-		if (el < w.inMs) {
-			// The middle of a wave arrives a little before its ends.
-			const lag = Math.abs(x / cols - 0.5) * 0.15 * Math.sin(w.seed);
-			const p = Math.min(1, Math.max(0, el / w.inMs - lag));
-			return { y: w.from + (w.peak - w.from) * easeOut(p) + wobble, breaking: true };
+		const wobble = Math.sin(x * 0.07 + w.seed + t / 4000) * 0.6 + Math.sin(x * 0.03 - t / 6000 + w.seed) * 1.2;
+		// Faster columns reach their peak sooner and start draining sooner; never faster than MIN_IN_MS.
+		const inMs = Math.max(MIN_IN_MS, w.inMs / speedAt(w, x, w.inSpread, 1));
+		// Some stretches of the wave run further up the beach than others.
+		const peak = w.peak + rows * w.reachVar * (Math.sin(x * 0.05 + w.seed * 7) + 0.5 * Math.sin(x * 0.09 - w.seed * 4));
+		if (el < inMs) {
+			const p = el / inMs;
+			return { y: w.from + (peak - w.from) * easeOut(p) + wobble, breaking: true };
 		}
-		const p = Math.min(1, (el - w.inMs) / w.outMs);
-		return { y: w.peak - (w.peak - w.to) * easeInOut(p) + wobble, breaking: false };
+		const p = Math.min(1, (el - inMs) / w.outMs * speedAt(w, x, w.outSpread, 2));
+		return { y: peak - (peak - w.to) * easeInOut(p) + wobble, breaking: false };
 	}
+
 
 	function step(t, dt) {
 		if (t - newest.start > newest.inMs + newest.outMs * newest.next) {
@@ -118,11 +140,11 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 			&& !waves.slice(k + 1).some(n => avgFront(n) >= avgFront(w)));
 		for (let x = 0; x < cols; x++) {
 			prevFront[x] = front[x];
-			front[x] = Math.max(shoreRow() * 0.8, ...waves.map(w => waveFront(w, x, t).y));
+			front[x] = Math.max(offshore(), ...waves.map(w => waveFront(w, x, t).y));
 			const retreating = front[x] < prevFront[x];
 			// The water surface follows the front with a lag, so its texture is dragged along behind it.
 			drag[x] += (front[x] - drag[x]) * Math.min(1, dt * 1.5);
-			for (let y = Math.floor(shoreRow() * 0.6); y < rows; y++) {
+			for (let y = 0; y < rows; y++) {
 				const i = y * cols + x;
 				if (y < front[x]) {
 					wet[i] = 1;
@@ -158,7 +180,6 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	}
 
 	function render(t) {
-		const shore = shoreRow();
 		let html = '';
 		const fronts = [];
 		for (let x = 0; x < cols; x++) {
@@ -188,7 +209,8 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 					// Texture coordinates move with the water: v is the row within the dragged surface.
 					const v = y - drag[x] * 0.85;
 					const swell = Math.sin(v * 1.1 - t / 700);
-					const deep = y < shore * 0.6;
+					// Water far behind the front is deeper.
+					const deep = front[x] - y > rows * 0.35;
 					// A lace of foam: thin lines where crossing ripples cancel out. It is densest
 					// just behind the waterline, fades out to sea, and slowly changes shape.
 					const near = Math.max(0, 1 - (front[x] - y) / (rows * 0.45));

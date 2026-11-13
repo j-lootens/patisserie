@@ -3,8 +3,13 @@
   "displayName": "Patisserie",
   "description": "Manage Pi sessions",
   "version": "0.0.1",
+  "publisher": "j-lootens",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/j-lootens/patisserie.git"
+  },
   "engines": {
-    "vscode": "^1.146.0"
+    "vscode": "^1.100.0"
   },
   "categories": [
     "Other"
@@ -80,17 +85,19 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "package": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.146.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "24.x",
-    "typescript-eslint": "^8.61.1",
+    "@types/vscode": "~1.100.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0",
+    "@vscode/vsce": "^3.9.2",
     "eslint": "^10.5.0",
     "typescript": "^6.0.3",
-    "@vscode/test-cli": "^0.0.15",
-    "@vscode/test-electron": "^3.0.0"
+    "typescript-eslint": "^8.61.1"
   },
   "overrides": {
     "diff": "^8.0.4",

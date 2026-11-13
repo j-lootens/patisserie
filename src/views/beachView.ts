@@ -14,8 +14,9 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	html, body { margin: 0; height: 100%; overflow: hidden; }
 	body { cursor: crosshair; user-select: none; }
 	pre { margin: 0; font: 12px/1.1 var(--vscode-editor-font-family, monospace); white-space: pre; }
-	.deep { color: #1e5aa8; } .deep2 { color: #173f78; } .sea { color: #3b8fd9; } .sea2 { color: #7cbcee; } .foam { color: #e8f4ff; } .net { color: #a9cdee; } .net2 { color: #d6e9fb; }
-	.w3 { color: #6e5a36; } .w2 { color: #8f7546; } .w1 { color: #b89c62; } .sand { color: #e2c582; }
+	.deep { color: #1e5aa8; } .deepG { color: #1d6a78; } .seaG { color: #3aa39a; } .foamG { color: #b9c2c8; } .deep2 { color: #173f78; } .sea { color: #3b8fd9; } .sea2 { color: #7cbcee; } .foam { color: #e8f4ff; } .net { color: #a9cdee; } .net2 { color: #d6e9fb; }
+	.w3 { color: #6e5a36; } .w2 { color: #8f7546; } .w1 { color: #b89c62; } .sand { color: #e2c582; } .sandL { color: #efd9a4; } .sandD { color: #c9a868; } .sandG { color: #a99f8a; } .c0 { color: #d9828c; } .c1 { color: #7fa7d6; } .c2 { color: #8fbf7a; } .c3 { color: #e09a5a; } .c4 { color: #b08fd0; }
+	.b3 { filter: brightness(0.5); } .b2 { filter: brightness(0.65); } .b1 { filter: brightness(0.82); }
 	.groove { color: #6b5230; } .s0 { color: #f0a0a0; } .s1 { color: #f4f0e6; } .s2 { color: #e8b070; }
 </style></head>
 <body><pre id="beach"></pre>
@@ -30,6 +31,10 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 
 	// Fixed pseudo-random sand texture, so the beach doesn't flicker.
 	const grain = (x, y) => (((x * 73856093) ^ (y * 19349663)) >>> 0) % 97;
+	// A second, independent hash for colour and texture picks.
+	const grain2 = (x, y) => ((Math.imul(x + 1, 2654435761) ^ Math.imul(y + 7, 40503)) >>> 0) % 101;
+	// Bits and pieces lying in the sand: grit, twigs, pebbles.
+	const DEBRIS = ['\`', "'", '~', ';', '"', '*', '°', '-'];
 	const SHELLS = ['@', 'o', 'e'];
 
 	let cols = 0, rows = 0;
@@ -102,7 +107,6 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 	const easeOut = p => 1 - (1 - p) * (1 - p);
 	const easeInOut = p => p < 0.5 ? 2 * p * p : 1 - 2 * (1 - p) * (1 - p);
 
-	/** Front row of wave w at column x, and whether it is still running up. */
 	/**
 	 * How fast a wave moves at column x, between 1 and 1 + spread: a smooth,
 	 * per-wave mix of bumps, so some stretches of the beach run ahead.
@@ -114,6 +118,15 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		return 1 + spread * (0.5 + 0.5 * n);
 	}
 
+	/** Stretches of a wave that ran further up the beach than the rest drain back faster. */
+	function reachAt(w, x) {
+		return rows * w.reachVar * (Math.sin(x * 0.05 + w.seed * 7) + 0.5 * Math.sin(x * 0.09 - w.seed * 4));
+	}
+
+	function drainSpeed(w, x) {
+		return speedAt(w, x, w.outSpread, 2) * (1 + Math.max(0, reachAt(w, x)) / rows * 5);
+	}
+
 	/** Front row of wave w at column x, and whether it is still running up there. */
 	function waveFront(w, x, t) {
 		const el = t - w.start;
@@ -121,13 +134,22 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		// Faster columns reach their peak sooner and start draining sooner; never faster than MIN_IN_MS.
 		const inMs = Math.max(MIN_IN_MS, w.inMs / speedAt(w, x, w.inSpread, 1));
 		// Some stretches of the wave run further up the beach than others.
-		const peak = w.peak + rows * w.reachVar * (Math.sin(x * 0.05 + w.seed * 7) + 0.5 * Math.sin(x * 0.09 - w.seed * 4));
+		const peak = w.peak + reachAt(w, x);
 		if (el < inMs) {
 			const p = el / inMs;
 			return { y: w.from + (peak - w.from) * easeOut(p) + wobble, breaking: true };
 		}
-		const p = Math.min(1, (el - inMs) / w.outMs * speedAt(w, x, w.outSpread, 2));
-		return { y: peak - (peak - w.to) * easeInOut(p) + wobble, breaking: false };
+		// A stretch that ran further drains fast, but only until it has caught up with
+		// the rest of the wave; then it moves with the rest instead of overtaking it.
+		const drained = (top, speed) => {
+			const p = Math.min(1, (el - inMs) / w.outMs * speed);
+			return top - (top - w.to) * easeInOut(p);
+		};
+		const fast = drained(peak, drainSpeed(w, x));
+		const rest = drained(Math.min(peak, w.peak), speedAt(w, x, w.outSpread, 2));
+		// A soft maximum, so the hand-over from fast to slow is smooth.
+		const y = (fast + rest + Math.sqrt((fast - rest) ** 2 + 1)) / 2;
+		return { y: y + wobble, breaking: false };
 	}
 
 
@@ -153,19 +175,23 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 			// Where the water turns back, it leaves a thin line of foam that slowly dries out.
 			// Water running over a line washes it away.
 			if (retreating && rising[x] && prevFront[x] > 0) {
-				const y = Math.ceil(prevFront[x]);
-				// Broad patches where more foam piles up, so the line is 1 to 3 rows thick.
-				const pile = Math.sin(x * 0.09 + t / 3000) * 0.6 + Math.sin(x * 0.23 + newest.seed) * 0.4;
-				const thick = 1 + (pile > 0.2 ? 1 : 0) + (pile > 0.65 ? 1 : 0);
+				// The last row the water covered: the line appears as the water drains off it.
+				const y = Math.floor(prevFront[x]);
+				// Slowly draining water leaves more foam: a thick line where it pulls back
+				// slowly, a fine one where it pulls back quickly.
+				const lead = waves.reduce((a, w) => (waveFront(w, x, t).y > waveFront(a, x, t).y ? w : a), waves[0]);
+				const drain = lead ? drainSpeed(lead, x) * 4000 / lead.outMs : 1;
+				const thick = drain < 0.85 ? 3 : drain < 1.2 ? 2 : 1;
 				marks[x] = marks[x].filter(m => Math.abs(m.y - y) > 2);
 				marks[x].push({ y, thick, s: 1, rate: 0.02 + Math.random() * 0.03 });
 				// The turning water drops what it carried: shells collect along the foam line.
-				if (Math.random() < 0.06 && y + thick < rows) {
-					shells.set((y + Math.floor(Math.random() * (thick + 1))) * cols + x, Math.floor(Math.random() * SHELLS.length));
+				if (Math.random() < 0.06 && y - thick >= 0 && y < rows) {
+					shells.set((y - Math.floor(Math.random() * thick)) * cols + x, Math.floor(Math.random() * SHELLS.length));
 				}
 			}
 			rising[x] = retreating ? 0 : 1;
-			marks[x] = marks[x].filter(m => m.y >= front[x] && (m.s -= m.rate * dt) > 0);
+			// A line is washed away once water runs clearly past it.
+			marks[x] = marks[x].filter(m => front[x] < m.y + 1.5 && (m.s -= m.rate * dt) > 0);
 			// The water surface follows the front with a lag, so its texture is dragged along behind it.
 			drag[x] += (front[x] - drag[x]) * Math.min(1, dt * 1.5);
 			for (let y = 0; y < rows; y++) {
@@ -248,13 +274,16 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 		}
 	}
 
-	/** Strength of the foam lines per cell; lower rows of a thick line are a little thinner. */
+	/** Strength of the foam lines per cell. A thick line grows back toward the water, where it is a little thinner. */
 	function markGrid() {
 		const grid = new Float32Array(cols * rows);
 		for (let x = 0; x < cols; x++) {
 			for (const m of marks[x]) {
-				for (let k = 0; k < m.thick && m.y + k < rows; k++) {
-					const i = (m.y + k) * cols + x;
+				for (let k = 0; k < m.thick && m.y - k >= 0; k++) {
+					if (m.y >= rows) {
+						break;
+					}
+					const i = (m.y - k) * cols + x;
 					grid[i] = Math.max(grid[i], m.s * (1 - k * 0.25));
 				}
 			}
@@ -287,7 +316,7 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 				}
 				if (foam) {
 					const d = (foam.y - y) / foam.depth;
-					cls = foam.breaking ? 'foam' : 'net2';
+					cls = foam.breaking ? (grain2(x, y) % 6 ? 'foam' : 'foamG') : (grain2(x, y) % 5 ? 'net2' : 'foamG');
 					ch = dither(foam.breaking ? d : d * 0.6 + 0.3, g);
 				} else if (y < front[x]) {
 					// Texture coordinates move with the water: v is the row within the dragged surface.
@@ -325,6 +354,10 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 					} else {
 						// Crests catch the light, troughs are darker.
 						cls = swell > 0.55 ? (deep ? 'sea' : 'sea2') : swell < -0.45 ? (deep ? 'deep2' : 'deep') : (deep ? 'deep' : 'sea');
+						// Loose cells here and there tinted towards green.
+						if (grain2(x, y) < 10) {
+							cls = cls === 'deep' || cls === 'deep2' ? 'deepG' : 'seaG';
+						}
 						ch = swell > 0.7 ? '^' : swell > 0.45 ? (g % 3 ? '~' : '≈')
 							: swell > 0.15 ? '~' : swell > -0.15 ? (g % 2 ? '-' : '~')
 							: swell > -0.45 ? (g % 3 ? '-' : '.') : (g % 4 ? ' ' : '.');
@@ -343,8 +376,15 @@ export class BeachViewProvider implements vscode.WebviewViewProvider {
 					ch = m > 0.7 ? (g % 3 ? '°' : 'o') : m > 0.35 ? (g % 2 ? '°' : '·') : (g % 2 ? '·' : '˙');
 				} else {
 					const w = wet[i];
-					cls = w > 0.66 ? 'w3' : w > 0.33 ? 'w2' : w > 0.05 ? 'w1' : 'sand';
-					ch = w > 0.66 ? (g % 5 ? ':' : '.') : g % 7 ? '.' : ',';
+					const g2 = grain2(x, y);
+					// Each grain has a fixed colour; wet sand shows the same colours, darkened.
+					const tint = g2 < 12 ? 'sandL' : g2 < 24 ? 'sandD' : g2 < 28 ? 'sandG'
+						// A few brightly coloured grains.
+						: g2 > 94 ? 'c' + (g % 5) : '';
+					const level = w > 0.66 ? 3 : w > 0.33 ? 2 : w > 0.05 ? 1 : 0;
+					cls = !tint ? (level ? 'w' + level : 'sand') : level ? tint + ' b' + level : tint;
+					ch = g2 > 97 ? DEBRIS[g % DEBRIS.length]
+						: w > 0.66 ? (g % 5 ? ':' : '.') : g % 7 ? '.' : ',';
 				}
 				line += '<span class="' + cls + '">' + ch + '</span>';
 			}

@@ -2,7 +2,7 @@
   "name": "patisserie",
   "displayName": "Patisserie",
   "description": "Manage Pi sessions",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "j-lootens",
   "repository": {
     "type": "git",
@@ -24,6 +24,13 @@
           "title": "Pi Sessions",
           "icon": "media/sessions.svg"
         }
+      ],
+      "panel": [
+        {
+          "id": "patisserieBeach",
+          "title": "Beach",
+          "icon": "media/sessions.svg"
+        }
       ]
     },
     "views": {
@@ -35,6 +42,13 @@
         {
           "id": "patisserie.context",
           "name": "Context"
+        }
+      ],
+      "patisserieBeach": [
+        {
+          "type": "webview",
+          "id": "patisserie.beach",
+          "name": "Beach"
         }
       ]
     },

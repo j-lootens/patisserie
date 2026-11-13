@@ -102,7 +102,8 @@ suite('sessionContext', () => {
 		assert.deepStrictEqual(nodes.map(n => n.label), [
 			'User Prompts', 'Context Files', 'Skills Used', 'Skills Available', 'Files Touched', 'Tools', 'Model', 'Compactions', 'On Disk Now',
 		]);
-		const prompt = nodes[0].children?.[0];
+		assert.deepStrictEqual(nodes[0].children?.map(n => n.label), ['/skill:review', 'Fix the bug in src/a.ts']);
+		const prompt = nodes[0].children?.[1];
 		assert.strictEqual(prompt?.label, 'Fix the bug in src/a.ts');
 		const uri = prompt?.command?.arguments?.[0];
 		assert.strictEqual(texts.provideTextDocumentContent(uri), 'Fix the bug in src/a.ts');

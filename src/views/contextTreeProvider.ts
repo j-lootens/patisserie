@@ -87,6 +87,7 @@ function plural(n: number, word: string): string {
 export function buildContextNodes(ctx: SessionContext, disk: DiskResources, texts: TextDocumentProvider): ContextNode[] {
 	const cwd = ctx.cwd;
 
+	// Most recent prompt first (FR-21); numbers keep the order they were sent in.
 	const prompts = ctx.prompts.map((p, i): ContextNode => {
 		const uri = texts.register(`Prompt ${i + 1}`, p.text);
 		return {
@@ -96,7 +97,7 @@ export function buildContextNodes(ctx: SessionContext, disk: DiskResources, text
 			icon: 'comment',
 			command: { command: 'vscode.open', title: 'Show Prompt', arguments: [uri, { preview: true }] },
 		};
-	});
+	}).reverse();
 
 	// Context files recorded in the system prompt win; older sessions fall back to the disk scan.
 	const recordedContext = ctx.contextFiles.length > 0;

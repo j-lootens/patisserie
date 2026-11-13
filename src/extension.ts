@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { continueLatestSession, forkSession, newNamedSession, openSessionInTerminal, renameSession } from './pi/piCli';
 import { PiSession } from './sessions/types';
+import { BeachViewProvider } from './views/beachView';
 import { ContextTreeProvider, TEXT_SCHEME, TextDocumentProvider } from './views/contextTreeProvider';
 import { formatCost } from './views/format';
 import { SessionTreeProvider } from './views/sessionTreeProvider';
@@ -25,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
 		contextProvider,
 		contextView,
 		vscode.workspace.registerTextDocumentContentProvider(TEXT_SCHEME, texts),
+		vscode.window.registerWebviewViewProvider(BeachViewProvider.viewId, new BeachViewProvider()),
 		provider.onDidLoad(({ sessions, totalCost }) => {
 			treeView.description = `Total: ${formatCost(totalCost)}`;
 			// Keep the Context view in step with the session file (FR-7).

@@ -13,3 +13,4 @@ docs/**
 out/test/**
 *.vsix
 scripts/
+.github/**

@@ -1,0 +1,45 @@
+# Builds, tests and packages the extension when a version tag (v1.2.3) is pushed,
+# and uploads the .vsix as a build artifact.
+name: Release build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Check that the tag matches package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${version} (expected v${version})."
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # Runs compile and lint first (pretest). The VS Code tests need a display.
+      - name: Test
+        run: xvfb-run -a npm test
+
+      - name: Package
+        run: npx vsce package --out "patisserie-${GITHUB_REF_NAME}.vsix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: patisserie-${{ github.ref_name }}
+          path: patisserie-${{ github.ref_name }}.vsix
+          if-no-files-found: error

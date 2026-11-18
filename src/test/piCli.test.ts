@@ -21,7 +21,11 @@ suite('piCli', () => {
 	});
 
 	teardown(async () => {
-		await config().update('piPath', originalSetting, vscode.ConfigurationTarget.Global);
+		// Only write the setting back when a test changed it: writing user settings
+		// can be slow on a fresh VS Code, such as in CI.
+		if (config().inspect<string>('piPath')?.globalValue !== originalSetting) {
+			await config().update('piPath', originalSetting, vscode.ConfigurationTarget.Global);
+		}
 		await fs.rm(dir, { recursive: true, force: true });
 	});
 
